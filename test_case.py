@@ -18,7 +18,7 @@ XX, YY = np.mgrid[xmin:xmax:l1*1j, ymin:ymax:l2*1j]
 UV = v_f(XX.T, YY.T).T
 S = (UV[:, :,0]**2 + UV[:,:,1]**2)**0.5
 
-plt.quiver(XX, YY, UV[:, :,0]/S, UV[:,:,1]/S, S)
+plt.quiver(XX, YY, UV[:, :,0], UV[:,:,1], S)
 
 ax = plt.gca()
 plt.colorbar()
