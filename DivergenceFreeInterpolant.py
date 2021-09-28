@@ -6,6 +6,8 @@ import numpy as np
 class interpolant():
     def __init__(self, nu: int, k: int):   
         
+        self.dim = 2
+        
         rbf = RBF(nu, k).eq
         
         x0, x1 = var('x0'), var('x1')
@@ -32,12 +34,12 @@ class interpolant():
                                   coordinate_differences[:,:,1], 
                                   np.sqrt(coordinate_differences[:,:,0]**2 + coordinate_differences[:,:,1]**2))
         
-        array = tensor.swapaxes(1, 2).reshape(2 * N , 2 * N, order = 'F')
+        array = tensor.swapaxes(1, 2).reshape(self.dim * N , self.dim * N, order = 'F')
         
         U, s, V = svd(array)
         self.sol = np.array(np.split(V.T @ np.diag(1/s) @ U.T @ UV.flatten(), N))[:,:,np.newaxis]
         
-        interpolant.__call__ = np.vectorize(self.interpolate, signature = '(),()->(2)')
+        interpolant.__call__ = np.vectorize(self.interpolate, signature = '(),()->(%i)'%self.dim)
         
     def interpolate(self, x, y):
         X, Y = x - self.XY[:,0], y - self.XY[:,1]

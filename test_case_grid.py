@@ -1,7 +1,6 @@
 import matplotlib.pyplot as plt
 import matplotlib as mpl
 import numpy as np
-import tqdm
 import time
 import os
 mpl.rcParams['figure.dpi'] = 500
@@ -23,7 +22,8 @@ plt.quiver(XX, YY, UV[:, :,0], UV[:,:,1], S)
 ax = plt.gca()
 plt.colorbar()
 ax.set_aspect('equal')
-
+plt.show()
+plt.close()
 #%%
 
 interp = interpolant(5, 3)
@@ -39,7 +39,7 @@ crdsX, crdsY = np.mgrid[xmin:xmax:ll1*1j, ymin:ymax:ll2*1j]
 
 t1 = time.perf_counter()
 uv = interp(crdsX, crdsY)
-print('Time per interpolation: ', (time.perf_counter() - t1)/(l1*l2))
+print('Time per interpolation: ', (time.perf_counter() - t1)/(ll1*ll2))
 
 SS = (uv[:,:,0]**2 + uv[:,:,1]**2)**0.5
 #%%
@@ -50,6 +50,8 @@ ax = fig.add_subplot(111)
 stream = ax.streamplot(crdsX.T, crdsY.T, uv[:,:,0].T, uv[:,:,1].T, color = SS.T, density = 1, cmap ='autumn')
 fig.colorbar(stream.lines)
 ax.set_aspect('equal')
+plt.show()
+plt.close()
 #%%
 
 fig = plt.figure()
@@ -58,3 +60,5 @@ ax = fig.add_subplot(111)
 arrows = ax.quiver(crdsX, crdsY, uv[:,:,0]/SS, uv[:,:,1]/SS, SS)
 fig.colorbar(arrows)
 ax.set_aspect('equal')
+plt.show()
+plt.close()
