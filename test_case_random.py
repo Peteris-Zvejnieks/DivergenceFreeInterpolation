@@ -9,7 +9,7 @@ mpl.rcParams['figure.dpi'] = 500
 from DivergenceFreeInterpolant import interpolant
 #%%
 v_f = lambda x, y: np.array([-2*x**3 * y, 3*x**2 * y**2])
-N = 1500
+N = 100
 
 X, Y = np.random.rand(N), np.random.rand(N)
 
@@ -24,7 +24,7 @@ ax.set_aspect('equal')
 
 #%%
 
-interp = interpolant(5, 3)
+interp = interpolant(5, 3, 1)
 #%%
 t1 = time.perf_counter()
 
