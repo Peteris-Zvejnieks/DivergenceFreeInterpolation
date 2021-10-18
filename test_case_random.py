@@ -24,7 +24,7 @@ ax.set_aspect('equal')
 
 #%%
 
-interp = interpolant(5, 3, 1)
+interp = interpolant(5, 3, 2.5)
 #%%
 t1 = time.perf_counter()
 
@@ -47,7 +47,7 @@ SS = (uv[:,:,0]**2 + uv[:,:,1]**2)**0.5
 fig = plt.figure()
 ax = fig.add_subplot(111)
 
-stream = ax.streamplot(crdsX.T, crdsY.T, uv[:,:,0].T, uv[:,:,1].T, color = SS.T, density = 1, cmap ='autumn')
+stream = ax.streamplot(crdsX.T, crdsY.T, uv[:,:,0].T, uv[:,:,1].T, color = SS, density = 1, cmap ='autumn')
 fig.colorbar(stream.lines)
 ax.set_aspect('equal')
 #%%

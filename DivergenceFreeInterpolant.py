@@ -2,7 +2,7 @@ from sympy import var, lambdify, sqrt, Matrix, diff
 from RadialBasisFunctions import RBF
 from scipy.linalg import lu
 import numpy as np
-from Thinning import greedy_thinner, random_method
+from Thinning import smart_thinner, random_method
 
 
 def mesh_norm(Y):
@@ -18,6 +18,8 @@ class interpolant():
     def __init__(self, d: int, k: int, nu: float) -> None:   
         
         self.dim = 2
+        self.d = d
+        self.k = k
         self.nu = nu
         
         rbf = RBF(d, k).eq
@@ -39,7 +41,7 @@ class interpolant():
     def condition(self, XY, UV):
         self.XY = XY
         
-        subsets = greedy_thinner(XY, random_method)
+        subsets = smart_thinner(XY, int(XY.shape[0]*0.1))
         
         def create_interpolant(XY, sol, support_radii):
             
@@ -51,13 +53,13 @@ class interpolant():
             return np.vectorize(interpolant, signature = '(),()->(%i)'%self.dim)
         
         self.interpolants = []
-        residuals = UV
+        self.residuals = UV
         
         steps = list(range(len(subsets) - 1, 0, -5))
         if steps[-1] != 0: steps.append(0)
         for i in steps:
             Y = XY[subsets[i]]
-            e = residuals[subsets[i]].flatten()
+            error = self.residuals[subsets[i]].flatten()
                 
             support_radii = self.nu * mesh_norm(Y)**(self.sigma/(self.sigma + 1))
             Y /= support_radii
@@ -73,13 +75,14 @@ class interpolant():
             
             array = tensor.swapaxes(1, 2).reshape(self.dim * N , self.dim * N, order = 'F')
             
-            p, l, u = lu(array)
+            sol = np.array(np.split(np.linalg.solve(array, error), N))[:,:,np.newaxis]
+            # p, l, u = lu(array)
             
-            y = np.linalg.solve(l, np.dot(p, e))
-            sol = np.array(np.split(np.linalg.solve(u, y), N))[:,:,np.newaxis]
+            # y = np.linalg.solve(l, np.dot(p, error))
+            # sol = np.array(np.split(np.linalg.solve(u, y), N))[:,:,np.newaxis]
             
             self.interpolants.append(create_interpolant(Y, sol, support_radii))
-            residuals -= self.interpolants[-1](XY[:,0], XY[:,1])
+            self.residuals -= self.interpolants[-1](XY[:,0], XY[:,1])
             
         interpolant.__call__ = np.vectorize(self.interpolate, signature = '(),()->(%i)'%self.dim)
         
