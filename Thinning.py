@@ -23,7 +23,7 @@ def d_Y(x, Y):
 def r_YX(Y, X):
     return np.max([d_Y(x, Y) for x in X])
 
-def smart_thinner(X, n = 2):
+def smart_thinner(X, min_points = 2):
     boolean = np.ones(X.shape[0]) == 1
     subsets = [boolean.copy()]
     N = X.shape[0]
@@ -41,7 +41,7 @@ def smart_thinner(X, n = 2):
     
     
     
-    for k in range(N - n):
+    for k in range(N - min_points):
         Y = X[subsets[-1]]
         n = Y.shape[0]
         indexes = np.cumsum(subsets[-1])

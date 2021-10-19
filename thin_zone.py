@@ -3,7 +3,7 @@ from time import perf_counter as pc
 import matplotlib.pyplot as plt
 from Thinning import smart_thinner
 
-points = np.random.rand(750, 2)   
+points = np.random.rand(100, 2)   
 plt.scatter(points[:,0], points[:,1])
 ax = plt.gca()
 ax.set_aspect(1)
@@ -11,7 +11,7 @@ plt.show()
 plt.close()
 
 t1 = pc()
-subsets, radii = smart_thinner(points)
+subsets, radii = smart_thinner(points, 15)
 print(pc() - t1)
 
 plt.plot(radii)

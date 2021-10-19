@@ -10,7 +10,7 @@ from DivergenceFreeInterpolant import interpolant
 v_f = lambda x, y: np.array([-2*x**3 * y, 3*x**2 * y**2])
 xmin, xmax = 0, 1
 ymin, ymax = 0, 1
-l1, l2 = 25, 25
+l1, l2 = 10, 10
 
 XX, YY = np.mgrid[xmin:xmax:l1*1j, ymin:ymax:l2*1j]
 
@@ -26,7 +26,7 @@ plt.show()
 plt.close()
 #%%
 
-interp = interpolant(5, 3)
+interp = interpolant(5, 3, 2.5)
 #%%
 t1 = time.perf_counter()
 
@@ -47,7 +47,7 @@ SS = (uv[:,:,0]**2 + uv[:,:,1]**2)**0.5
 fig = plt.figure()
 ax = fig.add_subplot(111)
 
-stream = ax.streamplot(crdsX.T, crdsY.T, uv[:,:,0].T, uv[:,:,1].T, color = SS.T, density = 1, cmap ='autumn')
+stream = ax.streamplot(crdsX.T, crdsY.T, uv[:, :, 0].T, uv[:, :, 1].T, color = SS.T, density = 1, cmap ='autumn')
 fig.colorbar(stream.lines)
 ax.set_aspect('equal')
 plt.show()
