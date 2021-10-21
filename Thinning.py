@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.spatial import distance_matrix as dm
 
 def random_method(points):
     N = points.shape[0]
@@ -22,6 +23,11 @@ def d_Y(x, Y):
 
 def r_YX(Y, X):
     return np.max([d_Y(x, Y) for x in X])
+
+def rd_YX(Y, X):
+    distance_matrix = dm(Y, X)
+    mins = np.min(distance_matrix, axis = 1)
+    return np.max(mins)
 
 def smart_thinner(X, min_points = 2):
     boolean = np.ones(X.shape[0]) == 1

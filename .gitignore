@@ -2,3 +2,4 @@
 .spyproject/
 .idea/
 __pycache__/
+.test_plots/

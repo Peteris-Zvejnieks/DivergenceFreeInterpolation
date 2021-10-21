@@ -1,4 +1,4 @@
-from sympy import product, symbols, Rational, Max
+from sympy import product, symbols, Rational, Piecewise
 
 
 class RBF:
@@ -10,7 +10,7 @@ class RBF:
         eq = 0
         for incr in range(0, k + 1):
             eq += self._beta(incr, k) * RBF.r ** incr * self.p(nu + 2 * k - incr)
-        self.eq = eq
+        self.eq = eq #Piecewise((eq, RBF.r < 1), (0, RBF.r > 1))
 
     def _beta(self, j: int, k: int):
         if j == 0 and k == 0:
