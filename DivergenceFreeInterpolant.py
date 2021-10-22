@@ -20,8 +20,15 @@ class interpolant():
         kernel = Matrix([[-d11,  d01],
                          [ d01, -d00]]).subs(r_x, r)
         
-        self.comp_kernel = lambdify((x0, x1, r), kernel, ['numpy'])
-    
+        comp_kernel_r = lambdify((x0, x1, r), kernel, ['numpy'])
+
+        def comp_kernel(x,y):
+            # if (r := np.sqrt(x**2 + y**2)) > 1: return np.zeros((2, 2))
+            # else: return comp_kernel_r(x, y, r)
+            return comp_kernel_r(x, y, np.sqrt(x**2 + y**2))
+
+        self.comp_kernel = np.vectorize(comp_kernel, signature='(),()->(2,2)')
+
     def condition(self, XY, UV):    
         self.XY = XY
         
@@ -31,8 +38,7 @@ class interpolant():
         coordinate_differences = np.swapaxes(tmp.T - tmp, 1, 2)
         
         tensor = self.comp_kernel(coordinate_differences[:,:,0], 
-                                  coordinate_differences[:,:,1], 
-                                  np.sqrt(coordinate_differences[:,:,0]**2 + coordinate_differences[:,:,1]**2))
+                                  coordinate_differences[:,:,1])
         
         array = tensor.swapaxes(1, 2).reshape(self.dim * N , self.dim * N, order = 'F')
         
@@ -43,5 +49,5 @@ class interpolant():
         
     def interpolate(self, x, y):
         X, Y = x - self.XY[:,0], y - self.XY[:,1]
-        kernel_applied = self.comp_kernel(X, Y, np.sqrt(X**2 + Y**2)).T
-        return np.einsum('ijk,ijn', kernel_applied, self.sol).flatten()  
+        kernel_applied = self.comp_kernel(X, Y)
+        return np.einsum('ijk,ijn', kernel_applied, self.sol).flatten()
