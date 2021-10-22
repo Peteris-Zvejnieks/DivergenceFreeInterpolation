@@ -30,17 +30,15 @@ ax = plt.gca()
 plt.colorbar()
 ax.set_aspect('equal')
 
-#%%
-
 interp = interpolant(5, 3, 2.5)
-#%%
+
 t1 = time.perf_counter()
-interp.condition(np.array([X, Y]).T, UV)
+interp.condition(np.array([X, Y]).T, UV, 4)
 print('Conditioning: ', time.perf_counter() - t1)
 os.mkdir(path)
 plt.savefig(path + '/0_sample_points.png')
 plt.close()
-#%%
+
 xmin, xmax = 0, 1
 ymin, ymax = 0, 1
 ll1, ll2 = 50, 50
@@ -55,7 +53,6 @@ except:
 print('Time per interpolation: ', (time.perf_counter() - t1)/(ll1*ll2))
 
 SS = (uv[:,:,0]**2 + uv[:,:,1]**2)**0.5
-#%%
 
 fig = plt.figure()
 ax = fig.add_subplot(111)
@@ -71,7 +68,6 @@ plt.plot(interp.support_radii_history, '-o')
 plt.title('support radii')
 plt.savefig(path + '/2_support_radii.png')
 plt.close()
-#%%
 
 plt.plot(np.abs(interp.mistako_history))
 plt.title('|mistakos|')
@@ -80,7 +76,7 @@ plt.ylabel('log|mistakos|')
 
 plt.savefig(path + '/3_mistakos.png')
 plt.close()
-#%%
+
 
 plt.plot(interp.condition_numbers)
 plt.title('condition_number')
@@ -89,7 +85,7 @@ plt.ylabel('log(Cond(A))')
 
 plt.savefig(path + '/4_condition_number.png')
 plt.close()
-#%%
+
 norm = (interp.residuals[:,0]**2 + interp.residuals[:,1]**2)**0.5
 arrows = plt.quiver(interp.XY[:,0], interp.XY[:,1], interp.residuals[:,0]/norm, interp.residuals[:,1]/norm, norm)
 plt.title('Residuals')

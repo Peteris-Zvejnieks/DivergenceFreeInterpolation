@@ -32,28 +32,22 @@ class interpolant():
         kernel = Matrix([[-d11,  d01],
                          [ d01, -d00]]).subs(r_x, r)
         
-        comp_kernel_r = lambdify((x0, x1, r), kernel, ['numpy'])
-
-        # def comp_kernel(x,y):
-        #     if (r := np.sqrt(x**2 + y**2)) > 1: return np.zeros((2,2))
-        #     else: return comp_kernel_r(x, y, r)
-
-        def comp_kernel(x,y):
-            r = np.sqrt(x ** 2 + y ** 2)
-            return comp_kernel_r(x, y, r) * (r < 1)
-
-        self.comp_kernel = np.vectorize(comp_kernel, signature = '(),()->(%i,%i)' % (self.dim, self.dim))
+        self.comp_kernel = lambdify((x0, x1, r), kernel, ['numpy'])
 
         self.sigma = (d + 2*k - 1)/2
 
     def create_interpolant(self, XY, sol, r):
 
-        interpolant = lambda x, y: np.einsum('ijk,ijn',
-                                             r ** (-self.dim) * self.comp_kernel((x - XY[:, 0])/r, (y - XY[:, 1])/r),
-                                             sol).flatten()
+        def interpolant(x, y):
+            X, Y = (x - XY[:, 0])/r, (y - XY[:, 1])/r
+            R = np.linalg.norm(np.array([X, Y]).T, axis=1)
+            kernel_applied = r ** (-self.dim) * self.comp_kernel(X, Y, R).T
+            kernel_applied[R > 1] = np.zeros((2, 2))
+            return np.einsum('ijk,ijn', kernel_applied, sol).flatten()
+
         return np.vectorize(interpolant, signature = '(),()->(%i)' % self.dim)
 
-    def condition(self, XY, UV):
+    def condition(self, XY, UV, number_of_steps):
         XY = XY.astype(np.double)
         UV = UV.astype(np.double)
 
@@ -62,9 +56,7 @@ class interpolant():
         self.interpolants = []
 
         subset_bool_arrays, self.covering_radii_history = smart_thinner(XY, int(XY.shape[0] * 0.1))
-        steps = list(range(len(subset_bool_arrays) - 1, 0, -30))
-        if steps[-1] != 0:
-            steps.append(0)
+        steps = np.linspace(90, 0, number_of_steps).astype(int)
 
         self.support_radii_history = []
         self.mistako_history = []
@@ -79,11 +71,23 @@ class interpolant():
         
             coordinates_extruded = np.repeat(Y[:, :, np.newaxis], N, axis=2)
             coordinate_differences = np.swapaxes(coordinates_extruded.T - coordinates_extruded, 1, 2)
+            coordinate_difference_norms = np.linalg.norm(coordinate_differences, axis=-1)
+
+
             tensor = support_radii**(-self.dim) * self.comp_kernel(coordinate_differences[:, :, 0],
-                                                                   coordinate_differences[:, :, 1])
+                                                                   coordinate_differences[:, :, 1],
+                                                                   coordinate_difference_norms)
+
+            tensor = tensor.swapaxes(0, 2).swapaxes(1, 3)
+            tensor[coordinate_difference_norms > 1] = np.zeros((2, 2))
+            tensor = tensor.swapaxes(3, 1).swapaxes(2, 0)
             
             array = tensor.swapaxes(1, 2).reshape(self.dim * N, self.dim * N, order='F')
             error_on_subset = error[subset_bool_arrays[i]].flatten()
+
+            # sol = np.array(
+            #     np.split(np.linalg.solve(array, error_on_subset),
+            #              N))[:, :, np.newaxis]
 
             # q, r = np.linalg.qr(array)
             # p = q.T @ error_on_subset
@@ -92,15 +96,15 @@ class interpolant():
             #     np.split(sol,
             #              N))[:, :, np.newaxis]
 
-            sol, R, rank, s = np.linalg.lstsq(array, error_on_subset, rcond = None)
-            sol = np.array(
-                np.split(sol,
-                         N))[:, :, np.newaxis]
-
+            # sol, R, rank, s = np.linalg.lstsq(array, error_on_subset, rcond = None)
             # sol = np.array(
-            #     np.split(
-            #         lu_solve(lu_factor(array), error_on_subset),
+            #     np.split(sol,
             #              N))[:, :, np.newaxis]
+
+            sol = np.array(
+                np.split(
+                    lu_solve(lu_factor(array), error_on_subset),
+                         N))[:, :, np.newaxis]
 
             # sol = np.array(
             #     np.split(
