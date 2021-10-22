@@ -10,7 +10,7 @@ from DivergenceFreeInterpolant import interpolant
 #%%
 v_f = lambda x, y: np.array([-2*x**3 * y, 3*x**2 * y**2])
 N = 100
-
+np.random.seed(69)
 X, Y = np.random.rand(N), np.random.rand(N)
 
 UV = v_f(X, Y).T
