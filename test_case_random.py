@@ -10,7 +10,7 @@ from DivergenceFreeInterpolant import interpolant
 #%%
 v_f = lambda x, y: np.array([-2*x**3 * y, 3*x**2 * y**2])
 N = 100
-
+np.random.seed(69)
 X, Y = np.random.rand(N), np.random.rand(N)
 
 UV = v_f(X, Y).T
@@ -21,7 +21,8 @@ plt.quiver(X, Y, UV[:,0], UV[:,1], S)
 ax = plt.gca()
 plt.colorbar()
 ax.set_aspect('equal')
-
+plt.show()
+plt.close()
 #%%
 
 interp = interpolant(5, 3)
@@ -50,6 +51,8 @@ ax = fig.add_subplot(111)
 stream = ax.streamplot(crdsX.T, crdsY.T, uv[:,:,0].T, uv[:,:,1].T, color = SS.T, density = 1, cmap ='autumn')
 fig.colorbar(stream.lines)
 ax.set_aspect('equal')
+plt.show()
+plt.close()
 #%%
 
 fig = plt.figure()
@@ -58,3 +61,5 @@ ax = fig.add_subplot(111)
 arrows = ax.quiver(crdsX, crdsY, uv[:,:,0]/SS, uv[:,:,1]/SS, SS)
 fig.colorbar(arrows)
 ax.set_aspect('equal')
+plt.show()
+plt.close()
