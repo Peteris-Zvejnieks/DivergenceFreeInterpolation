@@ -23,6 +23,7 @@ plt.colorbar()
 ax.set_aspect('equal')
 plt.show()
 plt.close()
+
 #%%
 
 interp = interpolant(5, 3)
