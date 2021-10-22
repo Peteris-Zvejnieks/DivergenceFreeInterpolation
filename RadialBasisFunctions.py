@@ -1,4 +1,4 @@
-from sympy import product, symbols, Rational, Max
+from sympy import product, symbols, Rational
 
 
 class RBF:
