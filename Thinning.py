@@ -60,3 +60,4 @@ def smart_thinner(X, min_points = 2):
         boolean[indx] = False
         subsets.append(boolean.copy())
     return subsets, radii_history
+

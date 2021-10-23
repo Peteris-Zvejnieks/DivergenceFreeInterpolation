@@ -33,7 +33,7 @@ ax.set_aspect('equal')
 interp = interpolant(5, 3, 2.5)
 
 t1 = time.perf_counter()
-interp.condition(np.array([X, Y]).T, UV, 4)
+interp.condition(np.array([X, Y]).T, UV, 50)
 print('Conditioning: ', time.perf_counter() - t1)
 os.mkdir(path)
 plt.savefig(path + '/0_sample_points.png')

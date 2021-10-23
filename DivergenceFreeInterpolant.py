@@ -56,7 +56,7 @@ class interpolant():
         self.interpolants = []
 
         subset_bool_arrays, self.covering_radii_history = smart_thinner(XY, int(XY.shape[0] * 0.1))
-        steps = np.linspace(90, 0, number_of_steps).astype(int)
+        steps = np.linspace(int(0.7 * len(subset_bool_arrays)), 0, number_of_steps).astype(int)
 
         self.support_radii_history = []
         self.mistako_history = []
