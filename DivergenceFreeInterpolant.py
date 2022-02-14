@@ -22,36 +22,36 @@ class interpolant():
 
         self.comp_kernel = lambdify((x0, x1, r), kernel, ['numpy'])
 
-    def condition(self, XY, UV):
+    def condition(self, XY, UV, support_radii = 50):
         self.XY = XY
-        
+        self.support_radii = support_radii
         N = XY.shape[0]
         self.N = N
         
-        tmp = np.repeat(XY[:,:,np.newaxis], N, axis=2)
-        coordinate_differences = np.swapaxes(tmp.T - tmp, 1, 2)
+        tmp = np.repeat(XY[:, :, np.newaxis], N, axis=2)
+        coordinate_differences = np.swapaxes(tmp.T - tmp, 1, 2)/support_radii
         coordinate_difference_norms = np.linalg.norm(coordinate_differences, axis = -1)
 
-        tensor = self.comp_kernel(coordinate_differences[:,:,0],
-                                  coordinate_differences[:,:,1],
-                                  coordinate_difference_norms)
+        tensor = support_radii**(-self.dim)*self.comp_kernel(coordinate_differences[:, :, 0],
+                                                            coordinate_differences[:, :, 1],
+                                                            coordinate_difference_norms)
 
         tensor = tensor.swapaxes(0, 2).swapaxes(1, 3)
         tensor[coordinate_difference_norms > 1] = np.zeros((2,2))
-        tensor = tensor.swapaxes(3,1).swapaxes(2,0)
+        tensor = tensor.swapaxes(3, 1).swapaxes(2,0)
 
-        array = tensor.swapaxes(1, 2).reshape(self.dim * N , self.dim * N, order = 'F')
+        array = tensor.swapaxes(1, 2).reshape(self.dim * N , self.dim * N, order='F')
         
         U, s, V = svd(array)
-        self.sol = np.array(np.split(V.T @ np.diag(1/s) @ U.T @ UV.flatten(), N))[:,:,np.newaxis]
+        self.sol = np.array(np.split(V.T @ np.diag(1/s) @ U.T @ UV.flatten(), N))[:, :, np.newaxis]
         
-        interpolant.__call__ = np.vectorize(self.interpolate, signature = '(),()->(%i)'%self.dim)
+        interpolant.__call__ = np.vectorize(self.interpolate, signature='(),()->(%i)'%self.dim)
         
     def interpolate(self, x, y):
-        X, Y = x - self.XY[:,0], y - self.XY[:,1]
-        R = np.linalg.norm(np.array([X,Y]).T, axis = 1)
+        X, Y = (x - self.XY[:, 0])/self.support_radii, (y - self.XY[:, 1])/self.support_radii
+        R = np.linalg.norm(np.array([X,Y]).T, axis=1)
 
-        kernel_applied = self.comp_kernel(X, Y, R).T
-        kernel_applied[R > 1] = np.zeros((2,2))
+        kernel_applied = self.support_radii**(-self.dim)*self.comp_kernel(X, Y, R).T
+        kernel_applied[R > 1] = np.zeros((2, 2))
 
         return np.einsum('ijk,ijn', kernel_applied, self.sol).flatten()
