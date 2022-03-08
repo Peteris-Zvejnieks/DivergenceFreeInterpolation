@@ -42,8 +42,12 @@ class interpolant():
 
         array = tensor.swapaxes(1, 2).reshape(self.dim * N , self.dim * N, order='F')
         
-        U, s, V = svd(array)
-        self.sol = np.array(np.split(V.T @ np.diag(1/s) @ U.T @ UV.flatten(), N))[:, :, np.newaxis]
+        # U, s, V = svd(array)
+        # sol = V.T @ np.diag(1/s) @ U.T @ UV.flatten()
+        
+        sol = np.linalg.solve(array, UV.flatten())
+        
+        self.sol = np.array(np.split(sol, N))[:, :, np.newaxis]
         
         interpolant.__call__ = np.vectorize(self.interpolate, signature='(),()->(%i)'%self.dim)
         

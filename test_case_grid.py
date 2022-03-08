@@ -30,7 +30,7 @@ interp = interpolant(5, 3)
 #%%
 t1 = time.perf_counter()
 
-interp.condition(np.array([XX.flatten(), YY.flatten()]).T, UV.reshape(l1*l2,2))
+interp.condition(np.array([XX.flatten(), YY.flatten()]).T, UV.reshape(l1*l2,2), 2)
 
 print('Conditioning: ', time.perf_counter() - t1)
 #%%

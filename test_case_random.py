@@ -30,7 +30,7 @@ interp = interpolant(5, 3)
 #%%
 t1 = time.perf_counter()
 
-interp.condition(np.array([X, Y]).T, UV)
+interp.condition(np.array([X, Y]).T, UV, 2)
 
 print('Conditioning: ', time.perf_counter() - t1)
 #%%
