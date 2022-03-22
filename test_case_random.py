@@ -11,7 +11,7 @@ from DivergenceFreeInterpolant import interpolant
 v_f = lambda x, y: np.array([-2*x**3 * y, 3*x**2 * y**2])
 N = 100
 np.random.seed(69)
-X, Y = np.random.rand(N), np.random.rand(N)
+X, Y = np.random.rand(N), np.random.rand(N), np.random.rand(N)
 
 UV = v_f(X, Y).T
 S = (UV[:,0]**2 + UV[:,1]**2)**0.5
@@ -26,7 +26,7 @@ plt.close()
 
 #%%
 
-interp = interpolant(5, 3)
+interp = interpolant(5, 3, 2)
 #%%
 t1 = time.perf_counter()
 
