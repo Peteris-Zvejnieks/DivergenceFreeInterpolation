@@ -26,7 +26,7 @@ plt.show()
 plt.close()
 #%%
 
-interp = interpolant(5, 3)
+interp = interpolant(5, 3, 2)
 #%%
 t1 = time.perf_counter()
 
