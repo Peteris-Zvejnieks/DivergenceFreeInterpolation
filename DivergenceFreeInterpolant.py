@@ -39,7 +39,7 @@ class interpolant():
             d00, d11 = diff(f, x0, x0), diff(f, x1, x1)
             d01 = diff(f, x0, x1)
             
-            dd0, dd1 = - d22, -d00
+            dd0, dd1 = - d11, -d00
             
             kernel = Matrix([[dd0, d01],
                              [d01, dd1]]).subs(r_x, r)
