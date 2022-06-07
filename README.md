@@ -5,7 +5,7 @@ Divergence free vector field interpolant for 2D and 3D cases.
 Described in [[1]](#1), relies on radial basis functions [[2]](#2). 
 The current implementation works as expected, but does not scale well, 
 an improvement would be to implement a multilevel approach [[3]](#3), 
-but implementing a thinning algorithm [[4]](#4) prooved to be challenging.
+but implementing a thinning algorithm [[4]](#4) proved to be challenging.
 
 <p align="center">
   <img src="graphics/2D_sample_field.png" width="400" title="2D vector field">
@@ -50,9 +50,9 @@ currently only supports `2` and `3`, can be expanded indefinitely.
   vectorfield = np.random(3, 10)
   initialized_interpolant.condition(positions, vectorfield, support_radius = 0.2, method = 'linsolve')
 ```
-`positions` - vectorfield coordinates: `np.ndarray`, `shape = (dim, N)`
+`positions` - vector field coordinates: `np.ndarray`, `shape = (dim, N)`
 
-`vectorfield` - vectorfield values: `np.ndarray`, `shape = (dim, N)`
+`vectorfield` - vector field values: `np.ndarray`, `shape = (dim, N)`
 
 `support_radius` - kernel radius: `float`, default value `1`
 
