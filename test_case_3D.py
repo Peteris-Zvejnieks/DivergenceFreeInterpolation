@@ -11,7 +11,7 @@ div = lambda n, d: np.divide(n, d, out = np.zeros_like(d), where=d!=0)
 vector_field = lambda x, y, z: np.array([z, -x, -y])
 
 ## Number of sample points
-N = 125
+N = 50
 
 ## Random sample points
 X, Y, Z = 2*np.random.rand(N) - 1, 2*np.random.rand(N) - 1, 2*np.random.rand(N) - 1

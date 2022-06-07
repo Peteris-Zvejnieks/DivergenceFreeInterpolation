@@ -24,7 +24,7 @@ S = (U**2 + V**2)**0.5
 
 ## Visualize vectorfield
 fig, ax = plt.subplots(1, 1)
-quiver = ax.quiver(X, Y, div(U, S), div(V, S), S)
+quiver = ax.quiver(X, Y, div(U, S), div(V, S), S, cmap ='autumn')
 ax.set_aspect('equal')
 ax.set_xlim(0,1)
 ax.set_ylim(0,1)
