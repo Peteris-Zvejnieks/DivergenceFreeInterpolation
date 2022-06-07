@@ -8,7 +8,7 @@ class interpolant():
         self.kernel = RBF_kernel(nu, k, dim).kernel_numpy
         self.zero_kernel = np.zeros((dim, dim))
 
-    def condition(self, XY, UV, support_radii = 50, method = 'linsolve'):
+    def condition(self, XY, UV, support_radii = 1, method = 'linsolve'):
         self.XY = XY
         self.support_radii = support_radii
         N = XY.shape[0]
