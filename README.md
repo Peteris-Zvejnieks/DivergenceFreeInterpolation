@@ -7,6 +7,9 @@ The current implementation works as expected, but does not scale well,
 an improvement would be to implement a multilevel approach [[3]](#3), 
 but implementing a thinning algorithm [[4]](#4) prooved to be challenging.
 
+![2D sample vector field](https://github.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/blob/main/graphics/2D_sample_field.png)
+![2D interpolated vector field](https://github.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/blob/main/graphics/2D_interpolated_field.png)
+![3D vector field](https://github.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/blob/main/graphics/3D_field.png)
 ## Dependencies
 
 ```bash
