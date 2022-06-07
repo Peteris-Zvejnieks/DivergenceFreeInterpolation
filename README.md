@@ -11,6 +11,7 @@ but implementing a thinning algorithm [[4]](#4) prooved to be challenging.
   <img src="graphics/2D_sample_field.png" width="350" title="2D vector field">
   <img src="graphics/2D_interpolated_field.png" width="350">
 </p>
+
 ![3D vector field](https://github.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/blob/main/graphics/3D_field.png)
 
 ## Dependencies
