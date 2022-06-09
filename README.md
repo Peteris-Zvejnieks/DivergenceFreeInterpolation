@@ -14,7 +14,7 @@ but implementing a thinning algorithm [[4]](#4) proved to be challenging.
 
 ![3D vector field](https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/main/graphics/3D_field.png)
 
-## Dependencies
+## Installation
 
 ```bash
   pip install Divergence-Free-Interpolant
