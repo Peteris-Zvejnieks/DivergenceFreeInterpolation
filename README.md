@@ -70,7 +70,7 @@ accepts `SVD, penrose, linsolve, lstsq`
 
 `z` - z coordinates at which to interplate: `array_like`
 
-'vector' - interoplated vector values at the given points: `np.ndarray`, `shape = (..., dim)`
+`vector` - interoplated vector values at the given points: `np.ndarray`, `shape = (..., dim)`
 
 `__call__` is vectorized
 
