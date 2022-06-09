@@ -8,11 +8,11 @@ an improvement would be to implement a multilevel approach [[3]](#3),
 but implementing a thinning algorithm [[4]](#4) proved to be challenging.
 
 <p align="center">
-  <img src="graphics/2D_sample_field.png" width="400" title="2D vector field">
-  <img src="graphics/2D_interpolated_field.png" width="400">
+  <img src="https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/main/graphics/2D_sample_field.png" width="400" title="2D vector field">
+  <img src="https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/main/graphics/2D_interpolated_field.png" width="400">
 </p>
 
-![3D vector field](https://github.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/blob/main/graphics/3D_field.png)
+![3D vector field](https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/main/graphics/3D_field.png)
 
 ## Dependencies
 
