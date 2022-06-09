@@ -64,11 +64,11 @@ accepts `SVD, penrose, linsolve, lstsq`
   x, y, z = 0.3, 0.4, 0.6
   vector = initialized_interpolant(x, y, z)
 ```
-`x` - x coordinates at which to interplate: `array_like`
+`x` - x coordinates at which to interpolate: `array_like`
 
-`y` - y coordinates at which to interplate: `array_like`
+`y` - y coordinates at which to interpolate: `array_like`
 
-`z` - z coordinates at which to interplate: `array_like`
+`z` - z coordinates at which to interpolate: `array_like`
 
 `vector` - interoplated vector values at the given points: `np.ndarray`, `shape = (..., dim)`
 
