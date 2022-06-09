@@ -17,7 +17,7 @@ but implementing a thinning algorithm [[4]](#4) proved to be challenging.
 ## Dependencies
 
 ```bash
-  pip install -r requirements.txt --user
+  pip install Divergence-Free-Interpolant
 ```
 ### Test case dependecies
 ```bash
@@ -28,12 +28,12 @@ but implementing a thinning algorithm [[4]](#4) proved to be challenging.
 #### Import
 ```python
   import numpy as np
-  from DivergenceFreeInterpolant import interpolant
+  import Divergence_Free_Interpolant as dfi
 ```
 
 #### Initialize
 ```python
-  initialized_interpolant = interpolant(nu = 5, k = 3, dim = 3)
+  initialized_interpolant = dfi.interpolant(nu = 5, k = 3, dim = 3)
 ```
 `nu` - Radial basis function parameter: `int`, default value `5`, 
 in most cases does not have to be changed

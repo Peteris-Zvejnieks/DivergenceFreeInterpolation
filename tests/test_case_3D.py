@@ -2,7 +2,7 @@ import pyvista as pv
 import numpy as np
 import time
 
-from DivergenceFreeInterpolant import interpolant
+import Divergence_Free_Interpolant as dfi
 
 np.random.seed(69)
 div = lambda n, d: np.divide(n, d, out = np.zeros_like(d), where=d!=0)
@@ -20,7 +20,7 @@ X, Y, Z = 2*np.random.rand(N) - 1, 2*np.random.rand(N) - 1, 2*np.random.rand(N) 
 sample_UVW = vector_field(X, Y, Z)
 
 ## Initialize the interpolant, nu = 5, k = 3 will suffice almost always, dim is the dimensionality
-initialized_interpolant = interpolant(nu = 5, k = 3, dim = 3)
+initialized_interpolant = dfi.interpolant(nu = 5, k = 3, dim = 3)
 
 ## Condition the vectorfield 
 ## initialized_interpolant.condition(positions, vectors, support_radius)

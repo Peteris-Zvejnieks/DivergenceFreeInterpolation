@@ -1,6 +1,6 @@
-from RadialBasisFunctions import RBF_kernel
 from scipy.linalg import svd
 import numpy as np
+from .Radial_Basis_Functions import RBF_kernel
  
 class interpolant():
     def __init__(self, nu: int = 5, k: int = 3, dim: int = 3):   

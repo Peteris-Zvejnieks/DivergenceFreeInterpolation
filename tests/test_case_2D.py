@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import time
 plt.rcParams['figure.dpi'] = 500
-from DivergenceFreeInterpolant import interpolant
+import Divergence_Free_Interpolant as dfi
 
 np.random.seed(69)
 div = lambda n, d: np.divide(n, d, out = np.zeros_like(d), where=d!=0)
@@ -34,7 +34,7 @@ plt.close()
 
 ## Initialize the interpolant, nu = 5, k = 3 will suffice almost always, dim is the dimensionality
 ## default 
-initialized_interpolant = interpolant(nu = 5, k = 3, dim = 2)
+initialized_interpolant = dfi.interpolant(nu = 5, k = 3, dim = 2)
 
 ## Condition the vectorfield 
 ## initialized_interpolant.condition(positions, vectors, support_radius, method)
