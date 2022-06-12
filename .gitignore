@@ -1,6 +1,10 @@
 .ipynb_checkpoints/
 .spyproject/
+
 .idea/
+.venv/
+
 __pycache__/
+
 dist/
 *.egg-info/
