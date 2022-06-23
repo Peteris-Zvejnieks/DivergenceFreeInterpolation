@@ -1,0 +1,41 @@
+cmake_minimum_required(VERSION 3.4...3.18)
+project(Divergence_Free_Interpolant)
+include(FetchContent)
+
+find_package(PythonLibs REQUIRED)
+include_directories(${PYTHON_INCLUDE_DIRS})
+
+#Eigen
+FetchContent_Declare(
+        eigen3
+        GIT_REPOSITORY https://gitlab.com/libeigen/eigen/
+        GIT_TAG        3.4.0
+)
+FetchContent_GetProperties(eigen3)
+if(NOT eigen3_POPULATED)
+    FetchContent_Populate(eigen3)
+    add_subdirectory(${eigen3_SOURCE_DIR} ${eigen3_BINARY_DIR})
+    include_directories(${eigen3_SOURCE_DIR})
+endif()
+
+#pybind
+FetchContent_Declare(
+    pybind11
+    GIT_REPOSITORY https://github.com/pybind/pybind11
+    GIT_TAG        v2.9.2
+)
+FetchContent_GetProperties(pybind11)
+if(NOT pybind11_POPULATED)
+    FetchContent_Populate(pybind11)
+    add_subdirectory(${pybind11_SOURCE_DIR} ${pybind11_BINARY_DIR})
+    include_directories(${eigen3_SOURCE_DIR})
+endif()
+
+#
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+
+set(SOURCE_FILES Divergence_Free_Interpolant.cpp)
+
+#add_executable(Divergence_Free_Interpolant ${SOURCE_FILES})
+pybind11_add_module(Divergence_Free_Interpolant ${SOURCE_FILES})
+
