@@ -4,6 +4,15 @@ include(FetchContent)
 
 find_package(PythonLibs REQUIRED)
 include_directories(${PYTHON_INCLUDE_DIRS})
+SET(CMAKE_CXX_FLAGS "-Ofast -msse2 -DNDEBUG")
+
+#OpenMP
+find_package(OpenMP)
+if (OPENMP_FOUND)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${OpenMP_C_FLAGS}")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${OpenMP_CXX_FLAGS}")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${OpenMP_EXE_LINKER_FLAGS}")
+endif()
 
 #Eigen
 FetchContent_Declare(
@@ -35,6 +44,8 @@ endif()
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
 set(SOURCE_FILES Divergence_Free_Interpolant.cpp)
+
+
 
 #add_executable(Divergence_Free_Interpolant ${SOURCE_FILES})
 pybind11_add_module(Divergence_Free_Interpolant ${SOURCE_FILES})

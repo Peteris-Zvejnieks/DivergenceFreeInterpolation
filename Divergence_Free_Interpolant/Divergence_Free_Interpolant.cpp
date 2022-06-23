@@ -1,9 +1,11 @@
 #include <pybind11/pybind11.h>
 #include <pybind11/eigen.h>
 #include <Eigen/Dense>
+#include <iostream>
 #include <vector>
 #include <array>
 #include <cmath>
+#include <chrono>
 
 namespace py = pybind11;
 using namespace std;
@@ -60,7 +62,7 @@ class Interpolant3D {
     VectorXd Y;
     VectorXd Z;
 public:
-    MatrixXd A;
+//    MatrixXd A;
     Interpolant3D(int nu_ = 5, int k_ = 3, double support_radii_ = 1) : nu(nu_), k(k_), support_radii(support_radii_){}
 
     void setSampleCoordinates(const Ref<const Matrix<double, Dynamic, 1>> &x,
@@ -78,23 +80,26 @@ public:
     void condition(const Ref<const VectorXd> &U,
                    const Ref<const VectorXd> &V,
                    const Ref<const VectorXd> &W) {
-        A.resize(dim * N, dim * N);
-
+        MatrixXd A(dim * N, dim * N);
+        chrono::steady_clock::time_point begin = chrono::steady_clock::now();
+        py::gil_scoped_release release;
+//        #pragma omp parallel for
         for (int i = 0; i < N; i++) {
             double xi = X(i);
             double yi = Y(i);
             double zi = Z(i);
 
-            for (int j = 0; j < N; j++) {
+            for (int j = i; j < N; j++) {
                 double dx = (xi - X(j)) / support_radii;
                 double dy = (yi - Y(j)) / support_radii;
                 double dz = (zi - Z(j)) / support_radii;
 
-                array<array<double, 3>, 3> kernel = kernel_5_3_3D(dx, dz, dy);
+                array<array<double, 3>, 3> kernel = kernel_5_3_3D(dx, dy, dz);
 
                 for (int m = 0; m < dim; m++) {
                     for (int n = 0; n < dim; n++) {
                         A(dim * i + m, dim * j + n) = pow(support_radii, -dim)*kernel[m][n];
+//                        if (i != j) A(dim * j + m, dim * i + n) = pow(support_radii, -dim)*kernel[m][n];
                     }
                 }
             }
@@ -105,38 +110,53 @@ public:
                 b(dim * i + 2) = W[i];
             }
         }
-        solution = A.colPivHouseholderQr().solve(b);
+        chrono::steady_clock::time_point end = chrono::steady_clock::now();
+        cout << "Kernel time = " << chrono::duration_cast<chrono::microseconds> (end - begin).count() << "[us]" << endl;
+        solution = A.selfadjointView<Eigen::Upper>().llt().solve(b);
+        chrono::steady_clock::time_point end2 = chrono::steady_clock::now();
+        cout << "Solve time = " << chrono::duration_cast<chrono::microseconds> (end2 - end).count() << "[us]" << endl;
+        cout << "Conditioning time = " << chrono::duration_cast<chrono::microseconds> (end2 - begin).count() << "[us]" << endl;
     }
 
-    VectorXd interpolate(double x, double y, double z) {
-        MatrixXd interpolationKernels(dim, dim * N);
+    MatrixXd interpolate(const Ref<const Matrix<double, Dynamic, 1>> &x,
+                         const Ref<const Matrix<double, Dynamic, 1>> &y,
+                         const Ref<const Matrix<double, Dynamic, 1>> &z) {
+        int n = x.size();
+        MatrixXd uvw;
+        MatrixXd interpolationKernels(3 * n, 3 * N);
+        py::gil_scoped_release release;
+        #pragma omp parallel for
+        for(int i = 0; i < n; i++) {
+            double xi = x(i);
+            double yi = y(i);
+            double zi = z(i);
 
-        for (int i = 0; i < N; i++) {
-            double dx = (x - X(i)) / support_radii;
-            double dy = (y - Y(i)) / support_radii;
-            double dz = (z - Z(i)) / support_radii;
-            auto kernel = kernel_5_3_3D(dx, dy, dz);
+            for (int j = 0; j < N; j++) {
+                double dx = (xi - X(j)) / support_radii;
+                double dy = (yi - Y(j)) / support_radii;
+                double dz = (zi - Z(j)) / support_radii;
+                array<array<double, 3>, 3> kernel = kernel_5_3_3D(dx, dy, dz);
 
-            for (int m = 0; m < dim; m++) {
-                for (int n = 0; n < dim; n++) {
-                    interpolationKernels(m, dim * i + n) = pow(support_radii, -dim)*kernel[m][n];
+                for (int m = 0; m < dim; m++) {
+                    for (int n = 0; n < dim; n++) {
+                        interpolationKernels(dim*i + m, dim * j + n) = pow(support_radii, -dim) * kernel[m][n];
+                    }
                 }
             }
         }
 
-        VectorXd result = interpolationKernels * solution;
-        return result;
+        MatrixXd result = interpolationKernels * solution;
+
+        return result.reshaped(3, n);
 
     }
 
-    MatrixXd getArray(){return A;}
 };
 
 PYBIND11_MODULE(Divergence_Free_Interpolant, m) {
     m.doc()  = "I'm a docstring hehe";
     py::class_<Interpolant3D>(m,  "Interpolant3D")
         .def(py::init<int, int, double>(), py::arg("nu") = 5, py::arg("k") = 3, py::arg("support_radii") = 1)
-        .def("array", &Interpolant3D::getArray)
         .def("setSampleCoordinates",    &Interpolant3D::setSampleCoordinates, py::arg("X"), py::arg("Y"), py::arg("Z"))
         .def("condition",               &Interpolant3D::condition, py::arg("U"), py::arg("V"), py::arg("W"))
         .def("interpolate",             &Interpolant3D::interpolate);

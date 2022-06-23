@@ -11,7 +11,7 @@ div = lambda n, d: np.divide(n, d, out = np.zeros_like(d), where=d!=0)
 vector_field = lambda x, y, z: np.array([z, -x, -y])
 
 ## Number of sample points
-N = 50
+N = 200
 
 ## Random sample points
 X, Y, Z = 2*np.random.rand(N) - 1, 2*np.random.rand(N) - 1, 2*np.random.rand(N) - 1
@@ -28,8 +28,13 @@ initialized_interpolant = dfi.interpolant(nu = 5, k = 3, dim = 3)
 ## vectors: np.ndarray, (dim, N)
 ## support_radius: positive float
 t1 = time.perf_counter()
-initialized_interpolant.condition(np.array([X, Y, Z]).T, sample_UVW.T, 2)
+initialized_interpolant.condition(np.array([X, Y, Z]).T, sample_UVW.T, 3)
 print('Conditioning time: ', time.perf_counter() - t1)
+
+arr = initialized_interpolant.array
+import matplotlib.pyplot as plt
+plt.rcParams['figure.dpi'] = 500
+plt.imshow(arr)
 
 ## Create resampling points
 _n, _m, _l = 10, 10, 10
