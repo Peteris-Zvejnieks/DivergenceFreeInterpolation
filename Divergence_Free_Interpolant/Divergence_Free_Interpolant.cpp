@@ -7,6 +7,8 @@
 #include <cmath>
 #include <chrono>
 
+#define EIGEN_USE_BLAS
+
 namespace py = pybind11;
 using namespace std;
 using Eigen::MatrixXd;
