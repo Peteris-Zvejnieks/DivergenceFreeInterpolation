@@ -6,7 +6,7 @@ def read(fname):
 
 setup(
     name = "Divergence_Free_Interpolant",
-    version = "0.1.5",
+    version = "0.1.6",
     author = "Peteris Zvejnieks",
     author_email = "peterf610@gmail.com",
     description = ("Divergence free interpolant for 2D and 3D systems"),

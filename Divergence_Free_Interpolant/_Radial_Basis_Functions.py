@@ -1,9 +1,9 @@
 from sympy import product, symbols, Rational, var, lambdify, sqrt, Matrix, diff
 
-class RBF_kernel():
+class _RBF_kernel():
     def __init__(self, nu: int = 5, k: int = 3 , dim: int = 3):
         if dim not in [2, 3]: raise ValueError(f'dimensionalit {dim} is not supported, on 2D or 3D are available')
-        self.rbf = RBF(nu, k).eq
+        self.rbf = _RBF(nu, k).eq
         self.dim = dim
         if dim == 2: self.kernel_2d()
         elif dim == 3: self.kernel_3d()
@@ -43,7 +43,7 @@ class RBF_kernel():
         
         self.kernel_numpy = lambdify((x0, x1, x2, r), self.kernel, ['numpy'])
 
-class RBF:
+class _RBF:
     r, i, f = symbols('r i f')
 
     def __init__(self, nu: int, k: int):
@@ -51,7 +51,7 @@ class RBF:
         self.k = k
         eq = 0
         for incr in range(0, k + 1):
-            eq += self._beta(incr, k) * RBF.r ** incr * self.p(nu + 2 * k - incr)
+            eq += self._beta(incr, k) * _RBF.r ** incr * self.p(nu + 2 * k - incr)
         self.eq = eq
 
     def _beta(self, j: int, k: int):
@@ -60,27 +60,27 @@ class RBF:
         else:
             coefficient = 0
             for incr in range(max([0, j - 1]), k):
-                coefficient += self._beta(incr, k - 1) * self._square_bracket(incr - j + 1).subs(RBF.f,
+                coefficient += self._beta(incr, k - 1) * self._square_bracket(incr - j + 1).subs(_RBF.f,
                                                                                                  incr + 1) / self._round_bracket(
-                    incr - j + 2).subs(RBF.f, self.nu + 2 * (k - 1) - incr + 1)
+                    incr - j + 2).subs(_RBF.f, self.nu + 2 * (k - 1) - incr + 1)
             return coefficient
 
     @staticmethod
     def p(nu: int):
-        return (1 - RBF.r) ** nu
+        return (1 - _RBF.r) ** nu
 
     @staticmethod
     def _square_bracket(l: int):
         if l == -1:
-            return 1 / (RBF.f + 1)
+            return 1 / (_RBF.f + 1)
         elif l == 0:
             return Rational(1)
         else:
-            return product(RBF.f - RBF.i, (RBF.i, 0, l - 1))
+            return product(_RBF.f - _RBF.i, (_RBF.i, 0, l - 1))
 
     @staticmethod
     def _round_bracket(l: int):
         if l == 0:
             return Rational(0)
         else:
-            return product(RBF.f + RBF.i, (RBF.i, 0, l - 1))
+            return product(_RBF.f + _RBF.i, (_RBF.i, 0, l - 1))

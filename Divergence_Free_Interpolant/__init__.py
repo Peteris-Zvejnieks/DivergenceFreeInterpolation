@@ -1,1 +1,1 @@
-from .Divergence_Free_interpolant import interpolant
+from ._Divergence_Free_interpolant import interpolant
