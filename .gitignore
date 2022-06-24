@@ -3,8 +3,12 @@
 
 .idea/
 .venv/
-
+**cmake-build-debug/
 __pycache__/
+Divergence_Free_Interpolant/RBF_kernels/
+Divergence_Free_Interpolant/build/
+misc/
+
 
 dist/
 *.egg-info/
