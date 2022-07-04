@@ -2,7 +2,7 @@ import pyvista as pv
 import numpy as np
 import time
 
-import Divergence_Free_Interpolant as dfi
+import src as dfi
 
 np.random.seed(69)
 div = lambda n, d: np.divide(n, d, out = np.zeros_like(d), where=d!=0)

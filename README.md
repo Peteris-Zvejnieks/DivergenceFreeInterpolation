@@ -26,9 +26,10 @@ but implementing a thinning algorithm [[4]](#4) proved to be challenging.
 ## Basic functionality
 
 #### Import
+
 ```python
   import numpy as np
-  import Divergence_Free_Interpolant as dfi
+  import src as dfi
 ```
 
 #### Initialize

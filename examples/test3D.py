@@ -4,8 +4,8 @@ import time
 # import matplotlib.pyplot as plt
 # plt.rcParams['figure.dpi'] = 500
 import sys
-sys.path.append('/home/peteris/Documents/GitHub/DivergenceFreeInterpolation/Divergence_Free_Interpolant/build/')
-import Divergence_Free_Interpolant as dfi
+sys.path.append('/home/peteris/Documents/GitHub/DivergenceFreeInterpolation/src/build/')
+import src as dfi
 print(dir(dfi))
 
 interpolant = dfi.Interpolant3D(support_radii = 3)

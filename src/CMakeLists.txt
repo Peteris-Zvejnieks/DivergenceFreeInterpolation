@@ -4,8 +4,17 @@ include(FetchContent)
 
 find_package(PythonLibs REQUIRED)
 include_directories(${PYTHON_INCLUDE_DIRS})
-SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Ofast -msse2 -DNDEBUG -march=native")
+SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -msse2 -DNDEBUG -march=native -llapack -lgfortran -lm")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+
+#LAPACK
+
+find_package(LAPACK)
+if (LAPACK_FOUND)
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${LAPACK_C_FLAGS}")
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${LAPACK_CXX_FLAGS}")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} ${LAPACK_EXE_LINKER_FLAGS}")
+endif()
 
 #OpenMP
 find_package(OpenMP)
@@ -42,6 +51,8 @@ if(NOT pybind11_POPULATED)
 endif()
 
 #
-set(SOURCE_FILES Divergence_Free_Interpolant.cpp)
-pybind11_add_module(Divergence_Free_Interpolant ${SOURCE_FILES})
+
+set(SOURCE_FILES Divergence_Free_Interpolant.cpp RBF_kernels/RBF_kernels.cpp)
+#add_executable(Divergence_Free_Interpolant ${SOURCE_FILES})
+pybind11_add_module(Divergence_Free_Interpolant_alt ${SOURCE_FILES})
 

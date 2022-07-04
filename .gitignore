@@ -5,8 +5,8 @@
 .venv/
 **cmake-build-debug/
 __pycache__/
-Divergence_Free_Interpolant/RBF_kernels/
-Divergence_Free_Interpolant/build/
+src/RBF_kernels/
+src/build/
 misc/
 
 
