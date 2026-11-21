@@ -1,12 +1,12 @@
 [project]
 name = "Divergence_Free_Interpolant"
-version = "0.1.6"
-description = "Divergence free interpolant for 2D and 3D systems"
+version = "0.2.0"
+description = "Divergence-free and curl-free interpolation of scattered vector data with matrix-valued RBFs"
 readme = "README.md"
 authors = [{ name = "Peteris Zvejnieks", email = "peterf610@gmail.com" }]
 license = "MIT"
 license-files = ["LICENSE"]
-keywords = ["Interpolation", "Vector-Field", "Radial-Basis-Functions"]
+keywords = ["Interpolation", "Vector-Field", "Radial-Basis-Functions", "Divergence-Free", "Curl-Free"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "Operating System :: OS Independent",
@@ -15,8 +15,8 @@ classifiers = [
 requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.23",
-    "scipy>=1.9",
-    "sympy>=1.11",
+    "scipy>=1.12",
+    "sympy>=1.12.1",
 ]
 
 [project.urls]
@@ -50,4 +50,4 @@ filterwarnings = ["error"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["divergence_free_interpolant"]
-known-local-folder = ["conftest"]
+known-local-folder = ["conftest", "reference_kernel"]

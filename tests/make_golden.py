@@ -1,10 +1,14 @@
 """Regenerate tests/data/golden.npz.
 
 The golden file pins the interpolant's *output values* (not its internal coefficients) for a
-few fixed configurations, so refactors can be checked against known-good behaviour.
+few fixed configurations, so refactors can be checked against known-good behaviour. The current
+file was recorded with the original 0.1 implementation (dense solve, sympy-lambdified kernels).
 Inputs are stored alongside the outputs, so the test does not depend on RNG reproducibility.
 
-Only regenerate on purpose, when a behaviour change is intended and understood:
+Regenerating overwrites that independent 0.1 reference with the output of the *current* code,
+after which test_golden only checks the code against itself and can no longer catch drift. Only
+regenerate on purpose, when a behaviour change is intended and understood (and update this
+docstring to say which implementation recorded the file):
 
     uv run python tests/make_golden.py
 """
@@ -43,9 +47,8 @@ def main():
         values = field(nodes)
         queries = lo + (hi - lo) * rng.random((100, dim))
 
-        interp = dfi.interpolant(nu=nu, k=k, dim=dim)
-        interp.condition(nodes, values, support_radii=delta, method="linsolve")
-        expected = interp(*queries.T)
+        interp = dfi.DivergenceFreeInterpolant(delta, nu=nu, k=k, solver="direct")
+        expected = interp.fit(nodes, values)(queries)
 
         arrays[f"{name}/config"] = np.array([dim, nu, k, delta])
         arrays[f"{name}/nodes"] = nodes

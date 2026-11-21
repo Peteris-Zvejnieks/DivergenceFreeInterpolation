@@ -485,7 +485,7 @@ wheels = [
 
 [[package]]
 name = "divergence-free-interpolant"
-version = "0.1.6"
+version = "0.2.0"
 source = { editable = "." }
 dependencies = [
     { name = "numpy", version = "2.2.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -512,8 +512,8 @@ examples = [
 [package.metadata]
 requires-dist = [
     { name = "numpy", specifier = ">=1.23" },
-    { name = "scipy", specifier = ">=1.9" },
-    { name = "sympy", specifier = ">=1.11" },
+    { name = "scipy", specifier = ">=1.12" },
+    { name = "sympy", specifier = ">=1.12.1" },
 ]
 
 [package.metadata.requires-dev]

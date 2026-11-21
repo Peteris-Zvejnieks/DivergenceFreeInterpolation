@@ -1,89 +1,225 @@
-import numpy as _np
-from scipy.linalg import svd as _svd
+"""Divergence-free and curl-free RBF interpolants (Fuselier 2008) with compactly supported kernels."""
 
-from ._kernel import _RBF_kernel
+from dataclasses import dataclass
 
-_METHODS = ('SVD', 'penrose', 'linsolve', 'lstsq')
+import numpy as np
+from scipy.spatial import cKDTree
+
+from ._assembly import evaluate, evaluate_potential, gram_matrix
+from ._kernel import CURL_FREE, DIVERGENCE_FREE, MatrixKernel, as_integer, get_kernel
+from ._solvers import SOLVERS, resolve_solver, solve
 
 
-class interpolant:
-    def __init__(self, nu: int = 5, k: int = 3, dim: int = 3):
-        self.dim = dim
-        self.kernel = _RBF_kernel(nu, k, dim).kernel_numpy
-        self.zero_kernel = _np.zeros((dim, dim))
-        self._evaluate = None
+@dataclass(frozen=True)
+class _Fit:
+    kernel: MatrixKernel
+    support_radius: float
+    nodes: np.ndarray  # (P, d) points the kernels are centred on
+    coefficients: np.ndarray  # (P, d)
+    tree: cKDTree
 
-    def __call__(self, *coordinates):
-        if self._evaluate is None:
-            raise RuntimeError('the interpolant has no data yet, call condition() first')
-        if len(coordinates) != self.dim:
-            names = 'x, y' if self.dim == 2 else 'x, y, z'
-            raise TypeError(f'expected {self.dim} coordinate arrays ({names}), got {len(coordinates)}')
-        return self._evaluate(*coordinates)
 
-    def condition(self, XY, UV, support_radii = 1, method = 'linsolve'):
-        if method not in _METHODS:
-            raise KeyError(f'Method - {method!r} not found, supported methods: {", ".join(_METHODS)}.')
-        # Copy the inputs, so later changes to the caller's arrays cannot desync nodes and coefficients
-        XY = _np.array(XY, dtype=float)
-        UV = _np.array(UV, dtype=float)
-        if XY.ndim != 2 or XY.shape[1] != self.dim:
-            raise ValueError(f'positions must have shape (N, {self.dim}), got {XY.shape}')
-        if UV.shape != XY.shape:
-            raise ValueError(f'vector field values must have the same shape as the positions, '
-                             f'(N, {self.dim}) = {XY.shape}, got {UV.shape}')
-        N = XY.shape[0]
+def _as_points(points):
+    """Copy and validate an (N, d) array of points."""
+    points = np.array(points, dtype=float)
+    if points.ndim != 2 or len(points) == 0:
+        raise ValueError(
+            f"points must have shape (N, dim) with N >= 1, got {points.shape}"
+        )
+    if not np.isfinite(points).all():
+        raise ValueError("points must be finite")
+    return points
 
-        # Solve before touching any attributes: if the solver fails, the previous state stays intact
-        array = self._gram_matrix(XY, support_radii)
-        values = UV.flatten()
 
-        if method == 'SVD':
-            U, s, Vh = _svd(array)
-            # Drop numerically zero singular values (same cutoff as numpy.linalg.pinv)
-            keep = s > s[0] * max(array.shape) * _np.finfo(float).eps
-            s_inv = _np.zeros_like(s)
-            s_inv[keep] = 1 / s[keep]
-            sol = Vh.T @ (s_inv * (U.T @ values))
-        elif method == 'penrose':
-            sol = _np.linalg.pinv(array) @ values
-        elif method == 'linsolve':
-            sol = _np.linalg.solve(array, values)
-        elif method == 'lstsq':
-            sol = _np.linalg.lstsq(array, values, rcond=None)[0]
+class _MatrixKernelInterpolant:
+    _kind: str
 
-        self.XY = XY
-        self.support_radii = support_radii
-        self.N = N
-        self.method = method
-        self.sol = _np.array(_np.split(sol, N))[:, :, _np.newaxis]
-        self._set_call()
+    def __init__(
+        self,
+        support_radius: float,
+        *,
+        k: int = 3,
+        nu: int | None = None,
+        solver: str = "auto",
+        tol: float = 1e-10,
+    ):
+        support_radius = float(support_radius)
+        if not np.isfinite(support_radius) or support_radius <= 0:
+            raise ValueError(
+                f"support_radius must be a positive number, got {support_radius}"
+            )
+        k = as_integer(k, "k")
+        nu = None if nu is None else as_integer(nu, "nu")
+        if k < 1:
+            raise ValueError(
+                f"k = {k} is not supported: the matrix kernels need a twice "
+                f"differentiable RBF, so k >= 1"
+            )
+        if solver not in SOLVERS:
+            raise ValueError(f"unknown solver {solver!r}, expected one of {SOLVERS}")
+        if not tol > 0:
+            raise ValueError(f"tol must be positive, got {tol}")
+        self.support_radius = support_radius
+        self.k = k
+        self.nu = nu
+        self.solver = solver
+        self.tol = tol
+        self._fit = None
 
-    def _gram_matrix(self, XY, support_radii = 1):
-        """Interpolation matrix of shape (dim*N, dim*N) for nodes XY of shape (N, dim)."""
-        N = XY.shape[0]
-        tmp = _np.repeat(XY[:, :, _np.newaxis], N, axis=2)
-        coordinate_differences = _np.swapaxes(tmp.T - tmp, 1, 2) / support_radii
-        coordinate_difference_norms = _np.linalg.norm(coordinate_differences, axis = -1)
+    @property
+    def dim(self) -> int | None:
+        """Dimension of the fitted data, None before fit()."""
+        return None if self._fit is None else self._fit.kernel.dim
 
-        tensor = support_radii**(-self.dim)*self.kernel(*_np.moveaxis(coordinate_differences, -1, 0),
-                                                        coordinate_difference_norms)
+    def fit(self, points, values):
+        """Interpolate vector `values` (N, dim) given at `points` (N, dim). Returns self."""
+        points = _as_points(points)
+        values = np.array(values, dtype=float)
+        if values.shape != points.shape:
+            raise ValueError(
+                f"values must have the same shape as points, {points.shape}, got {values.shape}"
+            )
+        if not np.isfinite(values).all():
+            raise ValueError("values must be finite")
+        n, dim = points.shape
+        if dim > max(n, 3):
+            raise ValueError(
+                f"got {n} points in {dim} dimensions; more dimensions than points usually "
+                f"means the arrays are transposed, pass them with shape (N, dim)"
+            )
+        self._fit_functionals(points, None, values.ravel())
+        return self
 
-        tensor = tensor.swapaxes(0, 2).swapaxes(1, 3)
-        tensor[coordinate_difference_norms > 1] = self.zero_kernel
-        tensor = tensor.swapaxes(3, 1).swapaxes(2,0)
+    def __call__(self, points):
+        """Evaluate the interpolant at `points` of shape (..., dim); returns shape (..., dim)."""
+        fit = self._require_fit()
+        queries, shape = self._as_queries(points, fit.kernel.dim)
+        values = evaluate(
+            fit.kernel,
+            fit.tree,
+            fit.nodes,
+            fit.coefficients,
+            queries,
+            fit.support_radius,
+        )
+        return values.reshape(shape + (fit.kernel.dim,))
 
-        return tensor.swapaxes(1, 2).reshape(self.dim * N , self.dim * N, order='F')
+    def _fit_functionals(self, points, weights, data):
+        """Fit to linear functionals that are weighted sums of point evaluations.
 
-    def _set_call(self):
-        signature = ','.join(['()'] * self.dim) + f'->({self.dim})'
-        self._evaluate = _np.vectorize(self._interpolate, signature=signature)
+        Functional i is lambda_i(u) = sum_p w_pi . u(x_p), with the weights given as a sparse
+        (P dim, n_functionals) matrix (None means one functional per point and component).
+        The interpolation matrix is W^T K W and the kernel coefficients at the points are W c.
+        All state is replaced only after the solve succeeds; the parameters used are stored with
+        the fit, so changing attributes such as support_radius only affects the next fit.
+        """
+        support_radius = self.support_radius
+        dim = points.shape[1]
+        kernel = get_kernel(self._kind, dim, self.nu, self.k)
+        tree = cKDTree(points)
+        if weights is None and self.solver != "lstsq":
+            duplicates = tree.query_pairs(0.0, output_type="ndarray")
+            if len(duplicates):
+                i, j = duplicates[0]
+                raise ValueError(
+                    f"points {i} and {j} coincide, which makes the system singular; "
+                    f"merge duplicate points or use solver='lstsq'"
+                )
+        matrix = gram_matrix(kernel, points, support_radius, tree)
+        if weights is not None:
+            matrix = (weights.T @ matrix @ weights).tocsr()
+        solver = resolve_solver(self.solver, matrix.shape[0], dim)
+        solution = solve(matrix, data, solver, self.tol)
+        if weights is not None:
+            solution = weights @ solution
+        self._fit = _Fit(
+            kernel, support_radius, points, solution.reshape(-1, dim), tree
+        )
 
-    def _interpolate(self, *point):
-        differences = (_np.array(point) - self.XY) / self.support_radii
-        R = _np.linalg.norm(differences, axis=1)
+    def _gram_matrix(self, points):
+        points = _as_points(points)
+        kernel = get_kernel(self._kind, points.shape[1], self.nu, self.k)
+        return gram_matrix(kernel, points, self.support_radius)
 
-        kernel_applied = self.support_radii**(-self.dim)*self.kernel(*differences.T, R).T
-        kernel_applied[R > 1] = self.zero_kernel
+    def _scalar_potential(self, points):
+        fit = self._require_fit()
+        queries, shape = self._as_queries(points, fit.kernel.dim)
+        values = evaluate_potential(
+            fit.kernel,
+            fit.tree,
+            fit.nodes,
+            fit.coefficients,
+            queries,
+            fit.support_radius,
+        )
+        return values.reshape(shape)
 
-        return _np.einsum('ijk,ijn', kernel_applied, self.sol).flatten()
+    def _require_fit(self) -> _Fit:
+        if self._fit is None:
+            raise RuntimeError(
+                f"this {type(self).__name__} has no data yet, call fit() first"
+            )
+        return self._fit
+
+    @staticmethod
+    def _as_queries(points, dim):
+        queries = np.asarray(points, dtype=float)
+        if queries.ndim == 0 or queries.shape[-1] != dim:
+            raise ValueError(
+                f"query points must have shape (..., {dim}), got {queries.shape}"
+            )
+        if not np.isfinite(queries).all():
+            raise ValueError("query points must be finite")
+        return queries.reshape(-1, dim), queries.shape[:-1]
+
+
+class DivergenceFreeInterpolant(_MatrixKernelInterpolant):
+    """Interpolates scattered vector data with an exactly divergence-free vector field.
+
+    Parameters
+    ----------
+    support_radius : float
+        Radius of the compactly supported kernel. Each point interacts with the points within this
+        distance: larger values give smoother, more accurate fields but denser, worse-conditioned
+        systems. A few times the typical point spacing is a good start.
+    k : int, default 3
+        Smoothness of the Wendland function psi_{nu,k} (it is C^2k); k >= 1.
+    nu : int, optional
+        Wendland parameter; defaults to the smallest positive definite choice, dim // 2 + k + 1.
+    solver : {'auto', 'direct', 'cg', 'lstsq'}, default 'auto'
+        'direct' sparse LU factorisation, 'cg' Jacobi-preconditioned conjugate gradients,
+        'lstsq' dense least squares (small problems, tolerates duplicate points), 'auto' picks
+        'direct' or 'cg' based on the system size.
+    tol : float, default 1e-10
+        Relative residual tolerance of the 'cg' solver.
+    """
+
+    _kind = DIVERGENCE_FREE
+
+    def stream_function(self, points):
+        """2D only: stream function psi with interpolant (d psi/dy, -d psi/dx); shape (...,).
+
+        Streamlines of the field are the contour lines of psi. psi is determined up to an additive
+        constant; this one vanishes farther than support_radius from all data points.
+        """
+        if self._require_fit().kernel.dim != 2:
+            raise ValueError("a scalar stream function only exists for 2D fields")
+        return self._scalar_potential(points)
+
+
+class CurlFreeInterpolant(_MatrixKernelInterpolant):
+    """Interpolates scattered vector data with an exactly curl-free (gradient) vector field.
+
+    The interpolant is the gradient of a scalar potential, available through potential().
+    Parameters are the same as for DivergenceFreeInterpolant.
+    """
+
+    _kind = CURL_FREE
+
+    def potential(self, points):
+        """Scalar potential P with grad P equal to the interpolant; shape (...,).
+
+        P is determined up to an additive constant; this one vanishes farther than
+        support_radius from all data points.
+        """
+        return self._scalar_potential(points)

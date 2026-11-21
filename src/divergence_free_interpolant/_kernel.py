@@ -1,74 +1,131 @@
+"""Matrix-valued divergence-free and curl-free kernels built from Wendland functions.
+
+For a radial function psi(r), with A(r) = psi'(r)/r and H(r) = psi''(r) - psi'(r)/r,
+
+    Hess psi(x) = A(r) I + H(r) xhat xhat^T,        xhat = x / r.
+
+The two kernels of Fuselier (2008) are then
+
+    divergence-free:  (grad grad^T - Laplacian I) psi = (-(d-1) A - H) I + H xhat xhat^T
+    curl-free:        -grad grad^T psi                = -A I - H xhat xhat^T
+
+For Wendland functions with k >= 1, A and H are polynomials in r and H(0) = 0, so the kernels
+are evaluated in any dimension without a special case at r = 0 (where xhat is set to 0).
+"""
+
+import numbers
+from functools import lru_cache
+
 import numpy as np
-from sympy import Matrix, diff, lambdify, limit, sqrt, var
+from numpy.polynomial import polynomial
 
-from ._wendland import _RBF
+from ._wendland import minimal_nu, wendland_coefficients
+
+DIVERGENCE_FREE = "divergence_free"
+CURL_FREE = "curl_free"
+KINDS = (DIVERGENCE_FREE, CURL_FREE)
 
 
-class _RBF_kernel:
-    def __init__(self, nu: int = 5, k: int = 3 , dim: int = 3):
-        if dim not in [2, 3]:
-            raise ValueError(f'dimension {dim} is not supported, only 2D and 3D are available')
-        if k < 1:
-            raise ValueError(f'k = {k} is not supported: the divergence-free kernel needs a twice '
-                             f'differentiable RBF, so k >= 1 (with nu >= k + 2)')
-        if nu < dim // 2 + k + 1:
-            raise ValueError(f'nu = {nu}, k = {k} does not give a positive definite kernel in {dim}D, '
-                             f'nu must be at least {dim // 2 + k + 1}')
-        self.rbf = _RBF(nu, k).eq
+def as_integer(value, name: str) -> int:
+    """Accept integers and integral floats such as 6.0 (e.g. read from a config file)."""
+    if isinstance(value, numbers.Integral):
+        return int(value)
+    if isinstance(value, numbers.Real) and float(value).is_integer():
+        return int(value)
+    raise ValueError(f"{name} must be an integer, got {value!r}")
+
+
+def resolve_parameters(k: int, nu: int | None, dim: int) -> int:
+    """Validate the kernel parameters for `dim` and return nu (defaulting to the minimal one)."""
+    k = as_integer(k, "k")
+    if dim < 2:
+        raise ValueError(
+            f"dimension {dim} is not supported, the data must be at least 2D"
+        )
+    if k < 1:
+        raise ValueError(
+            f"k = {k} is not supported: the matrix kernels need a twice "
+            f"differentiable RBF, so k >= 1"
+        )
+    lowest = minimal_nu(k, dim)
+    if nu is None:
+        return lowest
+    nu = as_integer(nu, "nu")
+    if nu < lowest:
+        raise ValueError(
+            f"nu = {nu}, k = {k} does not give a positive definite kernel in {dim}D, "
+            f"nu must be at least {lowest}"
+        )
+    return nu
+
+
+def radial_coefficients(nu: int, k: int):
+    """Exact ascending coefficients of A(r) = psi'(r)/r and H(r) = psi''(r) - psi'(r)/r."""
+    c = wendland_coefficients(nu, k)
+    if c[1] != 0:
+        raise ValueError(f"psi_{nu},{k} is not smooth at the origin")
+    a = [j * c[j] for j in range(2, len(c))]
+    h = [j * (j - 2) * c[j] for j in range(2, len(c))]
+    return a, h
+
+
+class MatrixKernel:
+    """Divergence-free or curl-free matrix kernel Phi_delta(x) = delta^-d Phi(x / delta)."""
+
+    def __init__(self, kind: str, dim: int, nu: int | None, k: int):
+        if kind not in KINDS:
+            raise ValueError(f"unknown kernel kind {kind!r}, expected one of {KINDS}")
+        self.kind = kind
         self.dim = dim
-        if dim == 2: self.kernel_2d()
-        elif dim == 3: self.kernel_3d()
+        self.k = as_integer(k, "k")
+        self.nu = resolve_parameters(self.k, nu, dim)
+        a, h = radial_coefficients(self.nu, self.k)
+        self._a = np.array(a, dtype=float)
+        self._h = np.array(h, dtype=float)
 
-    def kernel_numpy(self, *args):
-        """Evaluate the kernel; the last argument is the norm r of the coordinate differences.
+    def _radial_parts(self, u):
+        """A(r), H(r) and xhat for scaled differences u (..., d); zero outside the support."""
+        r = np.linalg.norm(u, axis=-1)
+        inside = r <= 1
+        a = np.where(inside, polynomial.polyval(r, self._a), 0.0)
+        h = np.where(inside, polynomial.polyval(r, self._h), 0.0)
+        unit = u / np.where(r > 0, r, 1.0)[..., np.newaxis]
+        return a, h, unit
 
-        The symbolic kernel can contain removable singularities like x0**2/r (for k = 1),
-        so entries at r = 0 are replaced by the limit computed in _set_origin_value."""
-        *coordinates, r = args
-        with np.errstate(divide='ignore', invalid='ignore'):
-            values = np.array(self._kernel_lambdified(*coordinates, r), dtype=float)
-        at_origin = np.asarray(r) == 0
-        if at_origin.any():
-            values[..., at_origin] = self.kernel_at_origin[..., np.newaxis]
-        return values
+    def blocks(self, differences, support_radius: float):
+        """Kernel matrices for coordinate differences of shape (..., d), returned as (..., d, d)."""
+        a, h, unit = self._radial_parts(
+            np.asarray(differences, dtype=float) / support_radius
+        )
+        outer = unit[..., :, np.newaxis] * unit[..., np.newaxis, :]
+        eye = np.eye(self.dim)
+        h = h[..., np.newaxis, np.newaxis]
+        if self.kind == DIVERGENCE_FREE:
+            identity_part = (-(self.dim - 1) * a)[..., np.newaxis, np.newaxis] - h
+            out = identity_part * eye + h * outer
+        else:
+            out = -(a[..., np.newaxis, np.newaxis] * eye + h * outer)
+        return support_radius ** (-self.dim) * out
 
-    def _set_origin_value(self, coordinates, r):
-        at_x0 = self.kernel.subs({x: 0 for x in coordinates})
-        self.kernel_at_origin = np.array(at_x0.applyfunc(lambda entry: limit(entry, r, 0)), dtype=float)
-        
-    def kernel_2d(self):
-        x0, x1 = var('x0'), var('x1')
-        r = self.rbf.free_symbols.pop()
-        r_x = sqrt(x0**2 + x1**2)
-        
-        f = self.rbf.subs(r, r_x)
-        
-        d00, d11 = diff(f, x0, x0), diff(f, x1, x1)
-        d01 = diff(f, x0, x1)
-        
-        dd0, dd1 = - d11, -d00
-        
-        self.kernel = Matrix([[dd0, d01],
-                              [d01, dd1]]).subs(r_x, r)
-        
-        self._kernel_lambdified = lambdify((x0, x1, r), self.kernel, ['numpy'])
-        self._set_origin_value((x0, x1), r)
-        
-    def kernel_3d(self):
-        x0, x1, x2 = var('x0'), var('x1'), var('x2')
-        r = self.rbf.free_symbols.pop()
-        r_x = sqrt(x0**2 + x1**2 + x2**2)
-        
-        f = self.rbf.subs(r, r_x)
-        
-        d00, d11, d22 = diff(f, x0, x0), diff(f, x1, x1), diff(f, x2, x2)
-        d01, d02, d12 = diff(f, x0, x1), diff(f, x0, x2), diff(f, x1, x2)
-        
-        dd0, dd1, dd2 = -d11 - d22, -d00-d22, -d00 - d11
-        
-        self.kernel = Matrix([[dd0, d01, d02],
-                              [d01, dd1, d12],
-                              [d02, d12, dd2]]).subs(r_x, r)
-        
-        self._kernel_lambdified = lambdify((x0, x1, x2, r), self.kernel, ['numpy'])
-        self._set_origin_value((x0, x1, x2), r)
+    def potential_terms(self, differences, coefficients, support_radius: float):
+        """Per-pair terms of the scalar potential of sum_j Phi(x - x_j) c_j.
+
+        With u_j = (x - x_j) / delta:
+        curl-free: the interpolant is grad P, P(x) = -delta^(1-d) sum_j A(|u_j|) u_j . c_j;
+        2D divergence-free: the interpolant is (d/dy, -d/dx) psi with the stream function
+        psi(x) = -delta^(1-d) sum_j A(|u_j|) perp(u_j) . c_j, where perp(u) = (u_y, -u_x).
+        """
+        u = np.asarray(differences, dtype=float) / support_radius
+        a, _, _ = self._radial_parts(u)
+        if self.kind == DIVERGENCE_FREE:
+            if self.dim != 2:
+                raise ValueError("a scalar stream function only exists in 2D")
+            u = np.stack([u[..., 1], -u[..., 0]], axis=-1)
+        return (
+            -(support_radius ** (1 - self.dim)) * a * np.sum(u * coefficients, axis=-1)
+        )
+
+
+@lru_cache
+def get_kernel(kind: str, dim: int, nu: int | None, k: int) -> MatrixKernel:
+    return MatrixKernel(kind, dim, nu, k)

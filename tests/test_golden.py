@@ -14,8 +14,11 @@ CASES = sorted({key.split("/")[0] for key in GOLDEN.files})
 @pytest.mark.parametrize("case", CASES)
 def test_matches_golden_values(case):
     dim, nu, k, support = GOLDEN[f"{case}/config"]
-    interp = dfi.interpolant(nu=int(nu), k=int(k), dim=int(dim))
-    interp.condition(GOLDEN[f"{case}/nodes"], GOLDEN[f"{case}/values"], support_radii=support)
-    actual = interp(*GOLDEN[f"{case}/queries"].T)
+    interp = dfi.DivergenceFreeInterpolant(support, nu=int(nu), k=int(k))
+    interp.fit(GOLDEN[f"{case}/nodes"], GOLDEN[f"{case}/values"])
+    assert interp.dim == int(dim)
+    actual = interp(GOLDEN[f"{case}/queries"])
     expected = GOLDEN[f"{case}/expected"]
-    np.testing.assert_allclose(actual, expected, rtol=1e-8, atol=1e-10 * np.abs(expected).max())
+    np.testing.assert_allclose(
+        actual, expected, rtol=1e-8, atol=1e-10 * np.abs(expected).max()
+    )
