@@ -124,7 +124,7 @@ def test_integral_float_parameters_are_accepted():
     np.testing.assert_array_equal(as_float(points), as_int(points))
 
 
-@pytest.mark.parametrize("option", [{"k": 2.5}, {"nu": 5.5}, {"k": "3"}])
+@pytest.mark.parametrize("option", [{"k": 2.5}, {"nu": 5.5}, {"k": "3"}, {"k": True}])
 def test_non_integral_parameters_raise(option):
     with pytest.raises(ValueError, match="must be an integer"):
         dfi.DivergenceFreeInterpolant(0.5, **option)
@@ -140,6 +140,14 @@ def test_fewer_points_than_dimensions_is_fine_in_2d_and_3d():
     points = np.array([[0.1, 0.2, 0.3], [0.4, 0.5, 0.6]])
     interp = dfi.CurlFreeInterpolant(1.0).fit(points, points)
     np.testing.assert_allclose(interp(points), points, atol=1e-12)
+
+
+@pytest.mark.parametrize("tol", [0, -1e-8, 1.0, np.inf, np.nan])
+def test_invalid_tolerance_raises(tol):
+    with pytest.raises(ValueError, match="tol"):
+        dfi.DivergenceFreeInterpolant(0.5, tol=tol)
+    with pytest.raises(ValueError, match="tol"):
+        dfi.MultilevelDivergenceFreeInterpolant(tol=tol)
 
 
 def test_unknown_solver_raises():
@@ -200,13 +208,66 @@ def test_lstsq_tolerates_duplicate_points():
     np.testing.assert_allclose(interp(points), values, atol=1e-6)
 
 
-def test_failed_solve_keeps_previous_state():
-    """A solver failure (here: CG with an unreachable tolerance) leaves the old fit in place."""
+def test_failed_solve_keeps_previous_state(monkeypatch):
+    """A solver failure leaves the old fit in place."""
+    from divergence_free_interpolant import _interpolant
+
     interp, points, values = fitted("curl_free", 2, n=10)
-    interp.solver, interp.tol = "cg", 1e-300
-    with pytest.raises(np.linalg.LinAlgError, match="conjugate gradients"):
+
+    def failing_solve(*args, **kwargs):
+        raise np.linalg.LinAlgError("did not converge")
+
+    monkeypatch.setattr(_interpolant, "solve", failing_solve)
+    with pytest.raises(np.linalg.LinAlgError, match="did not converge"):
         interp.fit(points + 0.01, values)
     np.testing.assert_allclose(interp(points), values, atol=1e-9)
+
+
+def test_auto_uses_direct_for_mid_size_3d_systems():
+    """CG is not reliably faster on arbitrary 3D data, so mid-size systems are factorised."""
+    from divergence_free_interpolant._solvers import resolve_solver
+
+    assert resolve_solver("auto", 3 * 4000, 3) == "direct"
+    assert resolve_solver("auto", 3 * 10_000, 3) == "cg"
+    assert resolve_solver("auto", 2 * 100_000, 2) == "direct"
+
+
+def test_auto_falls_back_to_direct_when_cg_fails(monkeypatch):
+    from divergence_free_interpolant import _interpolant, _solvers
+
+    monkeypatch.setattr(_interpolant, "resolve_solver", lambda *args: "cg")
+    monkeypatch.setattr(_solvers.splinalg, "cg", lambda *args, **kwargs: (args[1], 17))
+    interp, points, values = fitted("divergence_free", 3, n=50)
+    assert interp.solve_info.solver == "direct"
+    np.testing.assert_allclose(interp(points), values, atol=1e-9)
+    # An explicitly requested CG solve still fails loudly
+    with pytest.raises(np.linalg.LinAlgError, match="did not reach rtol"):
+        fitted("divergence_free", 3, n=50, solver="cg")
+
+
+def test_cg_iterations_are_capped(monkeypatch):
+    from divergence_free_interpolant import _solvers
+
+    calls = []
+    original = _solvers.splinalg.cg
+
+    def spy(*args, **kwargs):
+        calls.append(kwargs["maxiter"])
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(_solvers.splinalg, "cg", spy)
+    # 400 unknowns would allow 4000 iterations; the cap lowers that
+    monkeypatch.setattr(_solvers, "CG_MAX_ITERATIONS", 3000)
+    fitted("curl_free", 2, n=200, support=0.2, solver="cg")
+    assert calls == [3000]
+
+
+def test_cg_reports_unreachable_tolerance(monkeypatch):
+    from divergence_free_interpolant import _solvers
+
+    monkeypatch.setattr(_solvers.splinalg, "cg", lambda *args, **kwargs: (args[1], 17))
+    with pytest.raises(np.linalg.LinAlgError, match="did not reach rtol"):
+        fitted("curl_free", 2, n=10, solver="cg")
 
 
 def test_changing_parameters_after_fit_only_affects_the_next_fit():

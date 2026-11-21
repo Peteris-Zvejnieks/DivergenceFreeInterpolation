@@ -28,10 +28,12 @@ KINDS = (DIVERGENCE_FREE, CURL_FREE)
 
 def as_integer(value, name: str) -> int:
     """Accept integers and integral floats such as 6.0 (e.g. read from a config file)."""
-    if isinstance(value, numbers.Integral):
-        return int(value)
-    if isinstance(value, numbers.Real) and float(value).is_integer():
-        return int(value)
+    # bool is an Integral, but True as a count is almost certainly a mistake
+    if not isinstance(value, bool):
+        if isinstance(value, numbers.Integral):
+            return int(value)
+        if isinstance(value, numbers.Real) and float(value).is_integer():
+            return int(value)
     raise ValueError(f"{name} must be an integer, got {value!r}")
 
 

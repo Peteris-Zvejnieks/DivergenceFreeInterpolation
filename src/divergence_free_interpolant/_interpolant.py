@@ -7,7 +7,15 @@ from scipy.spatial import cKDTree
 
 from ._assembly import evaluate, evaluate_potential, gram_matrix
 from ._kernel import CURL_FREE, DIVERGENCE_FREE, MatrixKernel, as_integer, get_kernel
-from ._solvers import SOLVERS, resolve_solver, solve
+from ._preconditioner import cluster_preconditioner
+from ._solvers import (
+    AUTO_FALLBACK_DIRECT_LIMIT,
+    SOLVERS,
+    SolveInfo,
+    resolve_solver,
+    solve,
+    validate_tolerance,
+)
 
 
 @dataclass(frozen=True)
@@ -17,6 +25,26 @@ class _Fit:
     nodes: np.ndarray  # (P, d) points the kernels are centred on
     coefficients: np.ndarray  # (P, d)
     tree: cKDTree
+    solve_info: SolveInfo
+
+
+def _as_data(points, values):
+    """Copy and validate (N, dim) points and values for fitting."""
+    points = _as_points(points)
+    values = np.array(values, dtype=float)
+    if values.shape != points.shape:
+        raise ValueError(
+            f"values must have the same shape as points, {points.shape}, got {values.shape}"
+        )
+    if not np.isfinite(values).all():
+        raise ValueError("values must be finite")
+    n, dim = points.shape
+    if dim > max(n, 3):
+        raise ValueError(
+            f"got {n} points in {dim} dimensions; more dimensions than points usually "
+            f"means the arrays are transposed, pass them with shape (N, dim)"
+        )
+    return points, values
 
 
 def _as_points(points):
@@ -57,8 +85,7 @@ class _MatrixKernelInterpolant:
             )
         if solver not in SOLVERS:
             raise ValueError(f"unknown solver {solver!r}, expected one of {SOLVERS}")
-        if not tol > 0:
-            raise ValueError(f"tol must be positive, got {tol}")
+        tol = validate_tolerance(tol)
         self.support_radius = support_radius
         self.k = k
         self.nu = nu
@@ -73,22 +100,14 @@ class _MatrixKernelInterpolant:
 
     def fit(self, points, values):
         """Interpolate vector `values` (N, dim) given at `points` (N, dim). Returns self."""
-        points = _as_points(points)
-        values = np.array(values, dtype=float)
-        if values.shape != points.shape:
-            raise ValueError(
-                f"values must have the same shape as points, {points.shape}, got {values.shape}"
-            )
-        if not np.isfinite(values).all():
-            raise ValueError("values must be finite")
-        n, dim = points.shape
-        if dim > max(n, 3):
-            raise ValueError(
-                f"got {n} points in {dim} dimensions; more dimensions than points usually "
-                f"means the arrays are transposed, pass them with shape (N, dim)"
-            )
+        points, values = _as_data(points, values)
         self._fit_functionals(points, None, values.ravel())
         return self
+
+    @property
+    def solve_info(self) -> SolveInfo | None:
+        """How the last fit's system was solved (solver, unknowns, CG iterations)."""
+        return None if self._fit is None else self._fit.solve_info
 
     def __call__(self, points):
         """Evaluate the interpolant at `points` of shape (..., dim); returns shape (..., dim)."""
@@ -129,11 +148,28 @@ class _MatrixKernelInterpolant:
         if weights is not None:
             matrix = (weights.T @ matrix @ weights).tocsr()
         solver = resolve_solver(self.solver, matrix.shape[0], dim)
-        solution = solve(matrix, data, solver, self.tol)
+        preconditioner = None
+        if solver == "cg" and weights is None:
+            preconditioner = cluster_preconditioner(
+                kernel, points, support_radius, tree
+            )
+        try:
+            solution, info = solve(matrix, data, solver, self.tol, preconditioner)
+        except np.linalg.LinAlgError:
+            # Under 'auto', fall back to the direct factorisation, which copes with nearly
+            # coincident points that stall CG, as long as the system is small enough for it
+            fallback = (
+                self.solver == "auto"
+                and solver == "cg"
+                and matrix.shape[0] <= AUTO_FALLBACK_DIRECT_LIMIT
+            )
+            if not fallback:
+                raise
+            solution, info = solve(matrix, data, "direct", self.tol)
         if weights is not None:
             solution = weights @ solution
         self._fit = _Fit(
-            kernel, support_radius, points, solution.reshape(-1, dim), tree
+            kernel, support_radius, points, solution.reshape(-1, dim), tree, info
         )
 
     def _gram_matrix(self, points):
@@ -187,9 +223,10 @@ class DivergenceFreeInterpolant(_MatrixKernelInterpolant):
     nu : int, optional
         Wendland parameter; defaults to the smallest positive definite choice, dim // 2 + k + 1.
     solver : {'auto', 'direct', 'cg', 'lstsq'}, default 'auto'
-        'direct' sparse LU factorisation, 'cg' Jacobi-preconditioned conjugate gradients,
-        'lstsq' dense least squares (small problems, tolerates duplicate points), 'auto' picks
-        'direct' or 'cg' based on the system size.
+        'direct' sparse LU factorisation, 'cg' conjugate gradients (preconditioned by exact
+        inverses over clusters of unusually close points), 'lstsq' dense least squares (small
+        problems, tolerates duplicate points), 'auto' picks 'direct' or 'cg' based on the
+        system size and dimension, and retries a failed 'cg' with 'direct' when feasible.
     tol : float, default 1e-10
         Relative residual tolerance of the 'cg' solver.
     """

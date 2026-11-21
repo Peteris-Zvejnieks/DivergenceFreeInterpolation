@@ -2,5 +2,15 @@
 
 from ._interpolant import CurlFreeInterpolant, DivergenceFreeInterpolant
 from ._legacy import interpolant
+from ._multilevel import (
+    MultilevelCurlFreeInterpolant,
+    MultilevelDivergenceFreeInterpolant,
+)
 
-__all__ = ["CurlFreeInterpolant", "DivergenceFreeInterpolant", "interpolant"]
+__all__ = [
+    "CurlFreeInterpolant",
+    "DivergenceFreeInterpolant",
+    "MultilevelCurlFreeInterpolant",
+    "MultilevelDivergenceFreeInterpolant",
+    "interpolant",
+]
