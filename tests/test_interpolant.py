@@ -191,9 +191,8 @@ def test_evaluation_chunks_respect_the_pair_budget(monkeypatch):
     monkeypatch.setattr(_assembly, "PAIR_BUDGET", 100)
     rng = np.random.default_rng(5)
     nodes = rng.random((300, 3))
-    queries = np.vstack(
-        [rng.random((500, 3)), rng.random((50, 3)) + 10]
-    )  # some far away
+    # Some of the queries lie far away from all nodes
+    queries = np.vstack([rng.random((500, 3)), rng.random((50, 3)) + 10])
     tree = cKDTree(nodes)
     counts = tree.query_ball_point(queries, 0.4, return_length=True)
     chunks = list(_assembly._chunks(tree, queries, 0.4))

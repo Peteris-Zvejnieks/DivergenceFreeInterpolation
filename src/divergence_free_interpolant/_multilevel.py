@@ -13,8 +13,14 @@ from dataclasses import dataclass
 import numpy as np
 from scipy.spatial import cKDTree
 
-from ._interpolant import CurlFreeInterpolant, DivergenceFreeInterpolant, _as_data
-from ._kernel import as_integer, get_kernel
+from ._conditions import assemble
+from ._interpolant import (
+    CurlFreeInterpolant,
+    DivergenceFreeInterpolant,
+    _as_data,
+    as_conditions,
+)
+from ._kernel import DIVERGENCE_FREE, as_integer, get_kernel
 from ._solvers import SOLVERS, SolveInfo, validate_tolerance
 from ._thinning import farthest_point_ordering
 
@@ -109,6 +115,7 @@ class _MultilevelInterpolant:
         self.tol = tol
         self._fitted = None
         self._spacings = None
+        self._counts = None
 
     @property
     def dim(self) -> int | None:
@@ -121,20 +128,23 @@ class _MultilevelInterpolant:
         if self._fitted is None:
             return ()
         return tuple(
-            Level(
-                len(level._fit.nodes),
-                spacing,
-                level._fit.support_radius,
-                level.solve_info,
+            Level(count, spacing, level._fit.support_radius, level.solve_info)
+            for level, spacing, count in zip(
+                self._fitted, self._spacings, self._counts, strict=True
             )
-            for level, spacing in zip(self._fitted, self._spacings, strict=True)
         )
 
-    def fit(self, points, values):
-        """Interpolate vector `values` (N, dim) given at `points` (N, dim). Returns self."""
+    def fit(self, points, values, conditions=()):
+        """Interpolate vector `values` (N, dim) given at `points` (N, dim). Returns self.
+
+        `conditions` are boundary conditions (NormalComponent, VectorValue), imposed at every
+        level in the mean over boundary segments as long as the level's spacing; the finest
+        level uses each condition's segment_length if one was given.
+        """
         points, values = _as_data(points, values)
         if len(points) < 2:
             raise ValueError("multilevel interpolation needs at least 2 points")
+        conditions = as_conditions(conditions, points.shape[1])
         # Reject unsupported dimensions and parameters before the (costly) hierarchy is built
         get_kernel(self._single_level._kind, points.shape[1], self.nu, self.k)
         if self.solver != "lstsq":
@@ -151,9 +161,11 @@ class _MultilevelInterpolant:
         for number, (nodes, spacing) in enumerate(hierarchy, start=1):
             solver = self.solver
             last = number == len(hierarchy)
-            if solver == "auto" and not last:
+            if solver == "auto" and not last and not conditions:
                 # Farthest-point levels are quasi-uniform, where CG converges in a bounded number
-                # of iterations; only the final level holds arbitrarily close data points
+                # of iterations; only the final level holds arbitrarily close data points.
+                # Boundary functionals break that, so with conditions 'auto' stays (with its
+                # fallback to the direct solver)
                 large = len(nodes) * points.shape[1] > QUASI_UNIFORM_DIRECT_LIMIT
                 solver = "cg" if large else "direct"
             level = self._single_level(
@@ -165,7 +177,28 @@ class _MultilevelInterpolant:
             )
             # The data was validated as a whole; a coarse level may legitimately have fewer
             # points than dimensions, which the public fit() would reject as transposed input
-            level._fit_functionals(points[nodes], None, residual[nodes].ravel())
+            if conditions:
+                # Coarse levels are segmented at their own spacing; the finest level uses the
+                # conditions' own default (segment_length, or spacing capped by resolution)
+                lengths = [
+                    c.default_segment_length(spacing) if last else spacing
+                    for c in conditions
+                ]
+                atoms, weights, targets = assemble(
+                    points[nodes],
+                    residual[nodes],
+                    conditions,
+                    lengths,
+                    self._single_level._kind == DIVERGENCE_FREE,
+                )
+                self._subtract_coarser_levels(
+                    fitted, atoms, weights, targets, len(nodes)
+                )
+                level._fit_functionals(
+                    atoms, weights, targets, identity_points=len(nodes)
+                )
+            else:
+                level._fit_functionals(points[nodes], None, residual[nodes].ravel())
             fitted.append(level)
             if not last:
                 # Update the residual everywhere, including this level's own nodes, so that
@@ -173,7 +206,20 @@ class _MultilevelInterpolant:
                 residual -= level(points)
         self._fitted = fitted
         self._spacings = tuple(spacing for _, spacing in hierarchy)
+        self._counts = tuple(len(nodes) for nodes, _ in hierarchy)
         return self
+
+    @staticmethod
+    def _subtract_coarser_levels(fitted, atoms, weights, targets, data_points):
+        """Turn the condition targets into residuals of what the coarser levels contribute."""
+        if not fitted:
+            return
+        dim = atoms.shape[1]
+        boundary_atoms = atoms[data_points:]
+        coarse = sum(level(boundary_atoms) for level in fitted)
+        # Condition functionals only weight the boundary atoms (rows after the data points)
+        block = weights[data_points * dim :, data_points * dim :]
+        targets[data_points * dim :] -= block.T @ coarse.ravel()
 
     def __call__(self, points, *, levels: int | None = None):
         """Evaluate the interpolant at `points` of shape (..., dim); returns shape (..., dim).

@@ -42,6 +42,13 @@ level from coarse to fine (flow speed shown):
 
 ![Multilevel 2D](https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/refactor/graphics/2D_multilevel.png)
 
+### Boundary conditions
+
+Flow past a cylinder from scattered measurements, none close to the wall. With a no-penetration
+condition on the cylinder, the streamlines go around it instead of through it:
+
+![Boundary conditions 2D](https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/refactor/graphics/2D_boundary_conditions.png)
+
 ## Installation
 
 ```bash
@@ -131,7 +138,7 @@ interp(grid)
   Returns shape `(...)`.
 
 Both scalar potentials are determined up to an additive constant. The ones returned here vanish
-farther than `support_radius` from all samples.
+farther than `support_radius` from all samples and boundary conditions.
 
 ### Multilevel interpolation
 
@@ -164,6 +171,65 @@ interpolants. Two additions:
 `support_factor` controls the accuracy. Around 6 the levels reliably reduce the error. Below 5
 the refinement can stall. Larger values are more accurate (8 is a good choice in 2D), but the
 number of neighbours per point grows like `support_factor`<sup>dim</sup>.
+
+### Boundary conditions
+
+Besides the data, `fit(points, values, conditions=[...])` takes conditions on curves and
+surfaces. All interpolants accept them, single-level and multilevel:
+
+```python
+import numpy as np
+import divergence_free_interpolant as dfi
+
+# A parametric boundary: a callable of the parameter, or sympy expressions
+wall = dfi.Curve(
+    lambda t: np.stack([0.3 * np.cos(t), 0.3 * np.sin(t)], axis=-1),
+    interval=(0, 2 * np.pi),
+)
+rng = np.random.default_rng(0)
+points = rng.uniform(-1, 1, size=(300, 2))
+points = points[np.linalg.norm(points, axis=1) > 0.35]
+values = np.tile([1.0, 0.0], (len(points), 1))
+
+interp = dfi.DivergenceFreeInterpolant(1.0).fit(
+    points, values, conditions=[dfi.NormalComponent(wall)]
+)
+```
+
+- **Geometry:**
+  - `Curve(function, interval)`: `function(t)` maps parameters of shape `(n,)` to points
+    `(n, dim)`.
+  - `Surface(function, s_interval, t_interval)`: `function(s, t)` maps to points `(..., 3)`.
+
+  Either can be given as sympy expressions instead of a callable, which gives exact
+  derivatives; callables get numerical ones. A curve's normal points to the right of its
+  direction of travel, i.e. outwards for a counter-clockwise closed curve. A surface's normal is
+  `∂σ/∂s × ∂σ/∂t`.
+- **Conditions:**
+  - `NormalComponent(boundary, value=0)`: prescribes n·u. For flows, 0 is a no-penetration
+    (slip) wall, and a non-zero value is an inflow or outflow. For curl-free fields it
+    prescribes the normal derivative of the potential. It needs a curve in 2D or a surface in
+    3D.
+  - `VectorValue(boundary, value=0)`: prescribes the whole vector u. For flows, 0 is a no-slip
+    wall, and a non-zero value is a moving wall. It works for curves in any dimension and for
+    surfaces.
+
+  `value` is a constant, or a function of the boundary points.
+- **How it is imposed:** the boundary is cut into segments (patches for surfaces) about one
+  point spacing long, and each condition holds for the mean over each segment. The default
+  resolves every boundary with at least 32 segments or about 128 patches; set
+  `segment_length` to change that. Between segment centres the condition holds approximately,
+  but closely in practice: in the cylinder example the largest normal velocity on the wall
+  drops from 0.34 to 10⁻⁵. Multilevel interpolants impose the conditions on every level, with
+  segments matched to that level's spacing.
+- **Exactness:** the field stays exactly divergence-free or curl-free; the boundary condition
+  is what is approximated.
+- **Closed boundaries:** a divergence-free field has zero net flux through any closed curve or
+  surface (divergence theorem). So for divergence-free interpolants, the values prescribed on a
+  closed boundary must have zero net flux, otherwise `fit` raises a `ValueError`. The flux
+  through one segment then follows from the others, so that constraint is dropped to keep the
+  system well-conditioned. Closed boundaries are detected automatically (coinciding ends of a
+  curve, coinciding or collapsing edges of a surface), or set with `closed=`.
 
 ### Performance
 
@@ -208,6 +274,8 @@ Install the example dependencies with `uv sync --group examples`, then run e.g.
 - [`examples/multilevel_2D.py`](examples/multilevel_2D.py): a multi-scale flow from 20 000
   scattered measurements. Shows the reconstruction after the first, the first three and all
   levels, compared with a single level.
+- [`examples/boundary_conditions_2D.py`](examples/boundary_conditions_2D.py): flow past a
+  cylinder, without and with a no-penetration wall condition.
 
 ## Migrating from 0.1
 
@@ -256,8 +324,13 @@ The project is managed with [uv](https://docs.astral.sh/uv/).
 uv sync                    # create .venv with the package (editable) + dev tools
 uv run pytest              # run the tests
 uv run ruff check          # lint (enforced in CI)
+uv run ruff format         # format (enforced in CI)
 uv sync --group examples   # also install matplotlib, PyQt6 and pyvista for the examples
 ```
+
+`benchmarks/` holds timing scripts. `research/` holds exploratory spikes, such as
+`research/boundary_weighted_kernel.py`, which tests imposing wall conditions exactly through a
+boundary-weighted kernel; its findings are in the script's docstring.
 
 ## References
 

@@ -3,9 +3,11 @@
 from dataclasses import dataclass
 
 import numpy as np
+from scipy import sparse
 from scipy.spatial import cKDTree
 
 from ._assembly import evaluate, evaluate_potential, gram_matrix
+from ._conditions import Curve, NormalComponent, Surface, VectorValue, assemble
 from ._kernel import CURL_FREE, DIVERGENCE_FREE, MatrixKernel, as_integer, get_kernel
 from ._preconditioner import cluster_preconditioner
 from ._solvers import (
@@ -16,6 +18,10 @@ from ._solvers import (
     solve,
     validate_tolerance,
 )
+
+# Boundary functionals are preconditioned with exact inverses of blocks of this many
+# consecutive functionals (segments are numbered along the boundary, so blocks are local)
+BOUNDARY_BLOCK = 256
 
 
 @dataclass(frozen=True)
@@ -45,6 +51,50 @@ def _as_data(points, values):
             f"means the arrays are transposed, pass them with shape (N, dim)"
         )
     return points, values
+
+
+def as_conditions(conditions, dim):
+    """Validate boundary conditions (None, a single one or an iterable) for `dim`D data."""
+    if conditions is None:
+        return []
+    if isinstance(conditions, (NormalComponent, VectorValue)):
+        conditions = [conditions]
+    if isinstance(conditions, (Curve, Surface)):
+        raise TypeError(
+            "conditions must be conditions such as NormalComponent(boundary) or "
+            "VectorValue(boundary), not a bare boundary"
+        )
+    try:
+        conditions = list(conditions)
+    except TypeError:
+        raise TypeError(
+            f"conditions must be a NormalComponent, a VectorValue or an iterable of them, "
+            f"got {type(conditions).__name__}"
+        ) from None
+    for condition in conditions:
+        if not isinstance(condition, (NormalComponent, VectorValue)):
+            raise TypeError(
+                f"conditions must be NormalComponent or VectorValue, "
+                f"got {type(condition).__name__}"
+            )
+        if condition.boundary.dim != dim:
+            raise ValueError(
+                f"a {condition.boundary.dim}D boundary cannot constrain {dim}D data"
+            )
+        if isinstance(condition, NormalComponent) and not (
+            isinstance(condition.boundary, Surface) or condition.boundary.dim == 2
+        ):
+            raise ValueError(
+                "a normal component needs a curve in 2D or a surface in 3D"
+            )
+    return conditions
+
+
+def median_spacing(points):
+    """Median distance from each point to its nearest neighbour (None for a single point)."""
+    if len(points) < 2:
+        return None
+    return float(np.median(cKDTree(points).query(points, k=2)[0][:, 1]))
 
 
 def _as_points(points):
@@ -98,10 +148,27 @@ class _MatrixKernelInterpolant:
         """Dimension of the fitted data, None before fit()."""
         return None if self._fit is None else self._fit.kernel.dim
 
-    def fit(self, points, values):
-        """Interpolate vector `values` (N, dim) given at `points` (N, dim). Returns self."""
+    def fit(self, points, values, conditions=()):
+        """Interpolate vector `values` (N, dim) given at `points` (N, dim). Returns self.
+
+        `conditions` are boundary conditions (NormalComponent, VectorValue) that the
+        interpolant satisfies in addition, in the mean over boundary segments. Their default
+        segment length is the median point spacing, at most half the support radius.
+        """
         points, values = _as_data(points, values)
-        self._fit_functionals(points, None, values.ravel())
+        conditions = as_conditions(conditions, points.shape[1])
+        if not conditions:
+            self._fit_functionals(points, None, values.ravel())
+            return self
+        spacing = median_spacing(points)
+        default = self.support_radius / 2
+        if spacing is not None and spacing > 0:
+            default = min(default, spacing)
+        lengths = [c.default_segment_length(default) for c in conditions]
+        atoms, weights, targets = assemble(
+            points, values, conditions, lengths, self._kind == DIVERGENCE_FREE
+        )
+        self._fit_functionals(atoms, weights, targets, identity_points=len(points))
         return self
 
     @property
@@ -123,11 +190,14 @@ class _MatrixKernelInterpolant:
         )
         return values.reshape(shape + (fit.kernel.dim,))
 
-    def _fit_functionals(self, points, weights, data):
+    def _fit_functionals(self, points, weights, data, identity_points=None):
         """Fit to linear functionals that are weighted sums of point evaluations.
 
         Functional i is lambda_i(u) = sum_p w_pi . u(x_p), with the weights given as a sparse
         (P dim, n_functionals) matrix (None means one functional per point and component).
+        The first `identity_points` points carry plain point values in the first
+        identity_points * dim functionals (all points when weights is None); duplicates are
+        only an error among those, and they get the cluster preconditioner for CG.
         The interpolation matrix is W^T K W and the kernel coefficients at the points are W c.
         All state is replaced only after the solve succeeds; the parameters used are stored with
         the fit, so changing attributes such as support_radius only affects the next fit.
@@ -136,8 +206,12 @@ class _MatrixKernelInterpolant:
         dim = points.shape[1]
         kernel = get_kernel(self._kind, dim, self.nu, self.k)
         tree = cKDTree(points)
-        if weights is None and self.solver != "lstsq":
+        if weights is None:
+            identity_points = len(points)
+        identity_points = identity_points or 0
+        if identity_points and self.solver != "lstsq":
             duplicates = tree.query_pairs(0.0, output_type="ndarray")
+            duplicates = duplicates[np.all(duplicates < identity_points, axis=1)]
             if len(duplicates):
                 i, j = duplicates[0]
                 raise ValueError(
@@ -149,9 +223,9 @@ class _MatrixKernelInterpolant:
             matrix = (weights.T @ matrix @ weights).tocsr()
         solver = resolve_solver(self.solver, matrix.shape[0], dim)
         preconditioner = None
-        if solver == "cg" and weights is None:
-            preconditioner = cluster_preconditioner(
-                kernel, points, support_radius, tree
+        if solver == "cg" and identity_points:
+            preconditioner = self._preconditioner(
+                kernel, points, support_radius, tree, identity_points, matrix
             )
         try:
             solution, info = solve(matrix, data, solver, self.tol, preconditioner)
@@ -171,6 +245,21 @@ class _MatrixKernelInterpolant:
         self._fit = _Fit(
             kernel, support_radius, points, solution.reshape(-1, dim), tree, info
         )
+
+    @staticmethod
+    def _preconditioner(kernel, points, support_radius, tree, identity_points, matrix):
+        """Block-Jacobi: clusters of close points for the point values, and exact inverses of
+        consecutive blocks of the boundary functionals (neighbouring segments are strongly
+        coupled, which plain Jacobi cannot capture)."""
+        if identity_points == len(points) and matrix.shape[0] == points.size:
+            return cluster_preconditioner(kernel, points, support_radius, tree)
+        data = points[:identity_points]
+        blocks = [cluster_preconditioner(kernel, data, support_radius, cKDTree(data))]
+        rest = sparse.csr_array(matrix)[data.size :, data.size :]
+        for start in range(0, rest.shape[0], BOUNDARY_BLOCK):
+            stop = min(start + BOUNDARY_BLOCK, rest.shape[0])
+            blocks.append(np.linalg.inv(rest[start:stop, start:stop].toarray()))
+        return sparse.block_diag(blocks, format="csr")
 
     def _gram_matrix(self, points):
         points = _as_points(points)
@@ -237,7 +326,8 @@ class DivergenceFreeInterpolant(_MatrixKernelInterpolant):
         """2D only: stream function psi with interpolant (d psi/dy, -d psi/dx); shape (...,).
 
         Streamlines of the field are the contour lines of psi. psi is determined up to an additive
-        constant; this one vanishes farther than support_radius from all data points.
+        constant; this one vanishes farther than support_radius from all data points and
+        boundary conditions.
         """
         if self._require_fit().kernel.dim != 2:
             raise ValueError("a scalar stream function only exists for 2D fields")
@@ -257,6 +347,6 @@ class CurlFreeInterpolant(_MatrixKernelInterpolant):
         """Scalar potential P with grad P equal to the interpolant; shape (...,).
 
         P is determined up to an additive constant; this one vanishes farther than
-        support_radius from all data points.
+        support_radius from all data points and boundary conditions.
         """
         return self._scalar_potential(points)
