@@ -24,6 +24,8 @@ pub mod thinning;
 pub mod tree;
 
 #[cfg(feature = "python")]
+mod pool;
+#[cfg(feature = "python")]
 mod python;
 
 #[cfg(test)]

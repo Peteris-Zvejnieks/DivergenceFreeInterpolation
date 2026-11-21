@@ -16,7 +16,6 @@ from dataclasses import dataclass
 from itertools import pairwise
 
 import numpy as np
-import sympy as sp
 from numpy.polynomial.legendre import leggauss
 from scipy import sparse
 
@@ -36,9 +35,32 @@ CLOSED_TOLERANCE = 1e-8
 NET_FLUX_TOLERANCE = 1e-6
 
 
+def _sympy():
+    """sympy, imported only for boundaries given as sympy expressions (the "symbolic" extra)."""
+    try:
+        import sympy
+    except ImportError as error:
+        raise ImportError(
+            "boundaries given as sympy expressions need sympy: "
+            "pip install 'Divergence-Free-Interpolant[symbolic]'"
+        ) from error
+    return sympy
+
+
+def _is_symbolic(function) -> bool:
+    """Whether `function` is a sympy expression, or a sequence of them, rather than a callable.
+
+    sympy expressions are callable themselves, so they are recognised by their type's module,
+    without importing sympy.
+    """
+    if isinstance(function, (list, tuple)):
+        return True
+    return type(function).__module__.partition(".")[0] == "sympy"
+
+
 def _lambdify(expressions, symbols):
     """Numpy function of the parameters returning (..., components) from sympy expressions."""
-    lambdified = sp.lambdify(symbols, list(expressions), "numpy")
+    lambdified = _sympy().lambdify(symbols, list(expressions), "numpy")
 
     def evaluate(*arguments):
         shape = np.broadcast(*arguments).shape
@@ -54,10 +76,9 @@ def _as_function(function, parameters):
 
     The sympy symbols are taken in alphabetical order as the parameters.
     """
-    symbolic = isinstance(function, (sp.Basic, sp.MatrixBase, list, tuple))
-    if callable(function) and not symbolic:
+    if callable(function) and not _is_symbolic(function):
         return function, None
-    expressions = sp.Matrix(list(function))
+    expressions = _sympy().Matrix(list(function))
     symbols = sorted(expressions.free_symbols, key=lambda symbol: symbol.name)
     if len(symbols) != parameters:
         raise ValueError(
@@ -315,10 +336,15 @@ class Surface:
         )
 
 
-def _net_flux_check(sizes, flux_means, name):
-    """Raise unless the prescribed net flux through a closed boundary is (nearly) zero."""
+def _net_flux_check(sizes, flux_means, magnitudes, name):
+    """Raise unless the prescribed net flux through a closed boundary is (nearly) zero.
+
+    The flux is compared with the size of the prescribed values (`magnitudes`, per-segment means
+    of |value|), not with the fluxes themselves: a purely tangential wall velocity has fluxes
+    that are only round-off.
+    """
     net = float(np.sum(sizes * flux_means))
-    scale = float(np.sum(sizes * np.abs(flux_means)))
+    scale = float(np.sum(sizes * magnitudes))
     if abs(net) > NET_FLUX_TOLERANCE * scale:
         raise ValueError(
             f"{name} prescribes a net flux of {net:.3g} through a closed boundary, but a "
@@ -405,7 +431,10 @@ class NormalComponent(_Condition):
         prescribed = self._values(points, 1).reshape(segments, order)
         targets = np.sum(discretization.weights * prescribed, axis=1)
         if closed:
-            _net_flux_check(discretization.sizes, targets, type(self).__name__)
+            magnitudes = np.sum(discretization.weights * np.abs(prescribed), axis=1)
+            _net_flux_check(
+                discretization.sizes, targets, magnitudes, type(self).__name__
+            )
             # The segment fluxes of a divergence-free field sum to zero, so the last segment's
             # mean follows from the others: drop it to keep the system non-singular
             keep = columns < segments - 1
@@ -440,7 +469,12 @@ class VectorValue(_Condition):
                 * np.sum(prescribed * discretization.normals, axis=-1),
                 axis=1,
             )
-            _net_flux_check(discretization.sizes, normal_flux, type(self).__name__)
+            magnitudes = np.sum(
+                discretization.weights * np.linalg.norm(prescribed, axis=-1), axis=1
+            )
+            _net_flux_check(
+                discretization.sizes, normal_flux, magnitudes, type(self).__name__
+            )
         return points, (rows, columns, values), targets
 
 

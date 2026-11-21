@@ -304,6 +304,26 @@ def test_cg_breakdown_on_an_indefinite_matrix(monkeypatch):
         solve(indefinite, np.array([0.0, 1.0, 0.0]), "cg")
 
 
+@pytest.mark.parametrize(
+    "model",
+    [
+        dfi.DivergenceFreeInterpolant(0.6),
+        dfi.CurlFreeInterpolant(0.6),
+        dfi.MultilevelDivergenceFreeInterpolant(),
+        dfi.MultilevelCurlFreeInterpolant(),
+    ],
+)
+def test_fitted_interpolants_can_be_pickled(model):
+    """For saving models and for multiprocessing (spawn and forkserver pickle arguments)."""
+    import pickle
+
+    points = np.random.default_rng(0).random((300, 2))
+    model.fit(points, np.column_stack([-points[:, 1], points[:, 0]]))
+    restored = pickle.loads(pickle.dumps(model))
+    queries = np.random.default_rng(1).random((20, 2))
+    np.testing.assert_array_equal(restored(queries), model(queries))
+
+
 def test_modifying_input_arrays_after_fit_has_no_effect():
     interp, points, values = fitted("divergence_free", 2, n=10)
     probe = points.copy()

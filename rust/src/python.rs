@@ -11,6 +11,7 @@ use crate::assembly;
 use crate::cg;
 use crate::evaluate as evaluation;
 use crate::kernel::{Kind, PairKernel, RadialKernel};
+use crate::pool;
 use crate::sparse::CsrMatrix;
 use crate::thinning;
 
@@ -77,7 +78,7 @@ fn gram_matrix<'py>(
 ) -> PyResult<CsrArrays<'py>> {
     let kernel = &kernel.get().inner;
     let points = rows(&points, kernel.dim(), "points")?;
-    let csr = py.detach(|| assembly::gram_matrix(kernel, points, support_radius));
+    let csr = py.detach(|| pool::install(|| assembly::gram_matrix(kernel, points, support_radius)));
     Ok((
         PyArray1::from_vec(py, csr.indptr),
         PyArray1::from_vec(py, csr.indices),
@@ -116,8 +117,9 @@ fn evaluate<'py>(
     let kernel = &kernel.get().inner;
     let (nodes, coefficients, queries) =
         evaluation_inputs(kernel, &nodes, &coefficients, &queries)?;
-    let values =
-        py.detach(|| evaluation::evaluate(kernel, nodes, coefficients, queries, support_radius));
+    let values = py.detach(|| {
+        pool::install(|| evaluation::evaluate(kernel, nodes, coefficients, queries, support_radius))
+    });
     Ok(PyArray1::from_vec(py, values))
 }
 
@@ -140,7 +142,9 @@ fn evaluate_potential<'py>(
     let (nodes, coefficients, queries) =
         evaluation_inputs(kernel, &nodes, &coefficients, &queries)?;
     let values = py.detach(|| {
-        evaluation::evaluate_potential(kernel, nodes, coefficients, queries, support_radius)
+        pool::install(|| {
+            evaluation::evaluate_potential(kernel, nodes, coefficients, queries, support_radius)
+        })
     });
     Ok(PyArray1::from_vec(py, values))
 }
@@ -160,8 +164,9 @@ fn farthest_point_ordering<'py>(
     if dim == 0 || start >= flat.len() / dim {
         return Err(PyValueError::new_err("start must index one of the points"));
     }
-    let (order, radii) =
-        py.detach(|| thinning::farthest_point_ordering(flat, dim, start, stop_radius));
+    let (order, radii) = py.detach(|| {
+        pool::install(|| thinning::farthest_point_ordering(flat, dim, start, stop_radius))
+    });
     let order: Vec<i64> = order.into_iter().map(|i| i as i64).collect();
     Ok((PyArray1::from_vec(py, order), PyArray1::from_vec(py, radii)))
 }
@@ -213,8 +218,11 @@ fn conjugate_gradients<'py>(
             "matrix, preconditioner and rhs sizes differ",
         ));
     }
-    let solution =
-        py.detach(|| cg::conjugate_gradients(&matrix, &preconditioner, rhs, rtol, max_iterations));
+    let solution = py.detach(|| {
+        pool::install(|| {
+            cg::conjugate_gradients(&matrix, &preconditioner, rhs, rtol, max_iterations)
+        })
+    });
     let info = match solution.status {
         cg::Status::Converged => 0,
         cg::Status::MaxIterations => solution.iterations as i64,

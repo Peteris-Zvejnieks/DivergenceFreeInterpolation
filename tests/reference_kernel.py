@@ -9,7 +9,7 @@ from functools import lru_cache
 import numpy as np
 import sympy as sp
 
-from divergence_free_interpolant._wendland import _RBF
+from divergence_free_interpolant._wendland_sympy import _RBF
 
 
 @lru_cache

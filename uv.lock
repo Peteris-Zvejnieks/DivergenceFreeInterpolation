@@ -494,6 +494,10 @@ dependencies = [
     { name = "scipy", version = "1.15.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "scipy", version = "1.17.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version == '3.11.*'" },
     { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
+]
+
+[package.optional-dependencies]
+symbolic = [
     { name = "sympy" },
 ]
 
@@ -501,6 +505,7 @@ dependencies = [
 dev = [
     { name = "pytest" },
     { name = "ruff" },
+    { name = "sympy" },
 ]
 examples = [
     { name = "matplotlib", version = "3.10.9", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
@@ -513,13 +518,15 @@ examples = [
 requires-dist = [
     { name = "numpy", specifier = ">=1.23" },
     { name = "scipy", specifier = ">=1.12" },
-    { name = "sympy", specifier = ">=1.12.1" },
+    { name = "sympy", marker = "extra == 'symbolic'", specifier = ">=1.12.1" },
 ]
+provides-extras = ["symbolic"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "pytest", specifier = ">=8" },
     { name = "ruff", specifier = ">=0.6" },
+    { name = "sympy", specifier = ">=1.12.1" },
 ]
 examples = [
     { name = "matplotlib", specifier = ">=3.7" },

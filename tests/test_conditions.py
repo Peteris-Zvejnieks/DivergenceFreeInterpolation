@@ -248,6 +248,22 @@ def test_closed_boundaries_are_detected():
     assert not dfi.Surface(tube, (0, 1), (0, 2 * np.pi)).closed
 
 
+@pytest.mark.parametrize("multilevel", [False, True])
+def test_zero_flux_wall_velocities_are_accepted(multilevel):
+    """A rotating wall has round-off-sized normal fluxes; a strain flow has real ones that cancel."""
+    points = samples_outside(2, 1500 if multilevel else 300)
+    small = circle(0.1)
+    rotation = lambda p: np.stack([-p[:, 1], p[:, 0]], -1)
+    strain = lambda p: np.stack([p[:, 0], -p[:, 1]], -1)
+    for wall in (rotation, strain):
+        model = (
+            dfi.MultilevelDivergenceFreeInterpolant()
+            if multilevel
+            else dfi.DivergenceFreeInterpolant(0.6)
+        )
+        model.fit(points, strain(points), conditions=dfi.VectorValue(small, value=wall))
+
+
 def test_impossible_net_flux_through_a_closed_boundary_raises():
     points = samples_outside(2, 100)
     values = potential_flow(points)

@@ -1,13 +1,17 @@
 """Wendland radial basis functions psi_{nu,k}."""
 
+import subprocess
+import sys
+from pathlib import Path
+
 import pytest
 import sympy as sp
 
-from divergence_free_interpolant._wendland import (
-    _RBF,
-    minimal_nu,
-    wendland_coefficients,
-)
+from divergence_free_interpolant._wendland import minimal_nu, wendland_coefficients
+from divergence_free_interpolant._wendland_sympy import _RBF, derive_coefficients
+from divergence_free_interpolant._wendland_table import WENDLAND_COEFFICIENTS
+
+ROOT = Path(__file__).resolve().parents[1]
 
 r = _RBF.r
 
@@ -72,3 +76,97 @@ def test_coefficients_reproduce_the_polynomial(nu, k):
 )
 def test_minimal_nu(k, dim, expected):
     assert minimal_nu(k, dim) == expected
+
+
+# --- the shipped table -----------------------------------------------------------------------
+
+
+def test_shipped_table_matches_the_symbolic_derivation():
+    assert len(WENDLAND_COEFFICIENTS) == 16
+    for (nu, k), coefficients in WENDLAND_COEFFICIENTS.items():
+        assert coefficients == derive_coefficients(nu, k)
+
+
+def test_shipped_table_covers_the_minimal_nu_up_to_nine_dimensions():
+    for k in (1, 2, 3, 4):
+        for dim in range(2, 10):
+            assert (minimal_nu(k, dim), k) in WENDLAND_COEFFICIENTS
+
+
+def test_parameters_outside_the_table_are_derived_with_sympy():
+    assert (12, 2) not in WENDLAND_COEFFICIENTS
+    assert wendland_coefficients(12, 2) == derive_coefficients(12, 2)
+
+
+def test_generated_table_is_up_to_date():
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "tools" / "gen_kernels.py"), "--check"],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    assert result.returncode == 0, result.stderr
+
+
+# --- without sympy -----------------------------------------------------------------------------
+
+WITHOUT_SYMPY = """
+import sys
+
+# Make `import sympy` fail, as if it were not installed
+sys.modules["sympy"] = None
+
+import numpy as np
+
+import divergence_free_interpolant as dfi
+
+rng = np.random.default_rng(0)
+points = rng.random((60, 2))
+values = np.column_stack([-points[:, 1], points[:, 0]])
+dfi.DivergenceFreeInterpolant(0.5).fit(points, values)
+dfi.MultilevelCurlFreeInterpolant().fit(points, values)
+circle = dfi.Curve(lambda t: np.stack([0.1 * np.cos(t), 0.1 * np.sin(t)], -1), (0, 6.3))
+dfi.DivergenceFreeInterpolant(0.5).fit(
+    points, values, conditions=dfi.NormalComponent(circle)
+)
+try:
+    dfi.DivergenceFreeInterpolant(0.5, k=2, nu=12).fit(points, values)
+except ImportError as error:
+    assert "symbolic" in str(error), error
+else:
+    raise AssertionError("psi_12,2 should need sympy")
+print("ok")
+"""
+
+
+def test_the_package_works_without_sympy():
+    """Shipped kernels and callable boundaries need no sympy; other kernels explain why."""
+    result = subprocess.run(
+        [sys.executable, "-c", WITHOUT_SYMPY],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "ok"
+
+
+def test_default_use_does_not_import_sympy():
+    code = (
+        "import sys, numpy as np\n"
+        "import divergence_free_interpolant as dfi\n"
+        "p = np.random.default_rng(0).random((50, 3))\n"
+        "dfi.DivergenceFreeInterpolant(0.5).fit(p, p)\n"
+        "print('sympy' in sys.modules)\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=ROOT,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "False"

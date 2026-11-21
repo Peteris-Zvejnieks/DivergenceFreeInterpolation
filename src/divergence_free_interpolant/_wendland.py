@@ -1,8 +1,14 @@
-"""Wendland's compactly supported radial basis functions psi_{nu,k}, derived symbolically."""
+"""Wendland's compactly supported radial functions psi_{nu,k}: exact polynomial coefficients.
 
+The functions used in practice ship with the package as a table of exact coefficients
+(_wendland_table.py, generated with sympy by tools/gen_kernels.py), so sympy is not needed at
+runtime. Other (nu, k) are derived on demand with sympy, the optional "symbolic" extra.
+"""
+
+from fractions import Fraction
 from functools import lru_cache
 
-from sympy import Poly, Rational, expand, product, symbols
+from ._wendland_table import WENDLAND_COEFFICIENTS
 
 
 def minimal_nu(k: int, dim: int) -> int:
@@ -10,55 +16,27 @@ def minimal_nu(k: int, dim: int) -> int:
     return dim // 2 + k + 1
 
 
+def _shipped_description() -> str:
+    by_k = {}
+    for nu, k in WENDLAND_COEFFICIENTS:
+        by_k.setdefault(k, []).append(nu)
+    return ", ".join(
+        f"k = {k} with nu = {min(n)}..{max(n)}" for k, n in sorted(by_k.items())
+    )
+
+
 @lru_cache
-def wendland_coefficients(nu: int, k: int) -> tuple[Rational, ...]:
+def wendland_coefficients(nu: int, k: int) -> tuple[Fraction, ...]:
     """Exact coefficients c_j of psi_{nu,k}(r) = sum_j c_j r^j on 0 <= r <= 1 (ascending powers)."""
-    poly = Poly(expand(_RBF(nu, k).eq), _RBF.r)
-    return tuple(reversed(poly.all_coeffs()))
-
-
-class _RBF:
-    r, i, f = symbols("r i f")
-
-    def __init__(self, nu: int, k: int):
-        self.nu = nu
-        self.k = k
-        eq = 0
-        for incr in range(k + 1):
-            eq += self._beta(incr, k) * _RBF.r**incr * self.p(nu + 2 * k - incr)
-        self.eq = eq
-
-    def _beta(self, j: int, k: int):
-        if j == 0 and k == 0:
-            return Rational(1)
-        else:
-            coefficient = 0
-            for incr in range(max([0, j - 1]), k):
-                coefficient += (
-                    self._beta(incr, k - 1)
-                    * self._square_bracket(incr - j + 1).subs(_RBF.f, incr + 1)
-                    / self._round_bracket(incr - j + 2).subs(
-                        _RBF.f, self.nu + 2 * (k - 1) - incr + 1
-                    )
-                )
-            return coefficient
-
-    @staticmethod
-    def p(nu: int):
-        return (1 - _RBF.r) ** nu
-
-    @staticmethod
-    def _square_bracket(l: int):
-        if l == -1:
-            return 1 / (_RBF.f + 1)
-        elif l == 0:
-            return Rational(1)
-        else:
-            return product(_RBF.f - _RBF.i, (_RBF.i, 0, l - 1))
-
-    @staticmethod
-    def _round_bracket(l: int):
-        if l == 0:
-            return Rational(0)
-        else:
-            return product(_RBF.f + _RBF.i, (_RBF.i, 0, l - 1))
+    shipped = WENDLAND_COEFFICIENTS.get((nu, k))
+    if shipped is not None:
+        return shipped
+    try:
+        from ._wendland_sympy import derive_coefficients
+    except ImportError as error:
+        raise ImportError(
+            f"psi_{nu},{k} is not among the Wendland functions shipped with the package "
+            f"({_shipped_description()}); deriving it needs sympy: "
+            f"pip install 'Divergence-Free-Interpolant[symbolic]'"
+        ) from error
+    return derive_coefficients(nu, k)

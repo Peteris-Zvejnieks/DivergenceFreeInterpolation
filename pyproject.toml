@@ -16,8 +16,11 @@ requires-python = ">=3.10"
 dependencies = [
     "numpy>=1.23",
     "scipy>=1.12",
-    "sympy>=1.12.1",
 ]
+
+[project.optional-dependencies]
+# Kernel parameters beyond the shipped table, and boundaries given as sympy expressions
+symbolic = ["sympy>=1.12.1"]
 
 [project.urls]
 Homepage = "https://github.com/Peteris-Zvejnieks/DivergenceFreeInterpolation"
@@ -27,6 +30,8 @@ Repository = "https://github.com/Peteris-Zvejnieks/DivergenceFreeInterpolation"
 dev = [
     "pytest>=8",
     "ruff>=0.6",
+    # The tests check the shipped kernel table against the symbolic derivation
+    "sympy>=1.12.1",
 ]
 examples = [
     "matplotlib>=3.7",

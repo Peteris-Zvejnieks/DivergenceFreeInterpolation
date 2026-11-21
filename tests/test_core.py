@@ -1,5 +1,8 @@
 """The Rust core against the numpy reference implementation."""
 
+import subprocess
+import sys
+
 import numpy as np
 import pytest
 from scipy.spatial import cKDTree
@@ -77,6 +80,45 @@ def test_farthest_point_ordering_matches_numpy(dim, stop, monkeypatch):
     expected_order, expected_radii = _thinning.farthest_point_ordering(points, stop)
     np.testing.assert_array_equal(order, expected_order)
     np.testing.assert_allclose(radii, expected_radii, rtol=1e-14)
+
+
+WORKERS = """
+import multiprocessing
+import sys
+
+import numpy as np
+
+import divergence_free_interpolant as dfi
+
+
+def work(seed):
+    points = np.random.default_rng(seed).random((200, 2))
+    return float(dfi.DivergenceFreeInterpolant(0.3).fit(points, points)(points[:1]).sum())
+
+
+if __name__ == "__main__":
+    points = np.random.default_rng(0).random((2000, 2))
+    # Use the Rust thread pool in the parent before starting the workers
+    dfi.DivergenceFreeInterpolant(0.1).fit(points, points)(points)
+    with multiprocessing.get_context(sys.argv[1]).Pool(2) as pool:
+        print(pool.map(work, range(2)))
+"""
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="no fork on Windows")
+@pytest.mark.parametrize("method", ["fork", "forkserver", "spawn"])
+def test_worker_processes_after_parallel_work(method, tmp_path):
+    """A forked child must not inherit the parent's (threadless) thread pool and hang."""
+    script = tmp_path / "workers.py"
+    script.write_text(WORKERS)
+    result = subprocess.run(
+        [sys.executable, str(script), method],
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_core_validates_its_inputs():

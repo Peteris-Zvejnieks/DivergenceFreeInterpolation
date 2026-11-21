@@ -88,6 +88,11 @@ class MatrixKernel:
         # The same kernel in the Rust core, which assembles and evaluates with it
         self.core = _core.RadialKernel(kind, dim, self._a.tolist(), self._h.tolist())
 
+    def __reduce__(self):
+        # The Rust kernel cannot be pickled: rebuild everything from the parameters, so that
+        # fitted interpolants can be saved and sent to worker processes
+        return (MatrixKernel, (self.kind, self.dim, self.nu, self.k))
+
     def _radial_parts(self, u):
         """A(r), H(r) and xhat for scaled differences u (..., d); zero outside the support."""
         r = np.linalg.norm(u, axis=-1)

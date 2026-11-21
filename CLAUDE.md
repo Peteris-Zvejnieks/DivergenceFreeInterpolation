@@ -12,5 +12,9 @@
   with `cargo fmt` and pass `cargo clippy --all-targets -- -D warnings`, both without and with
   `--features python`; run them from `rust/` (CI enforces all of this). `cargo test` tests the
   core without Python. After changing Rust code, `uv sync` rebuilds the extension.
+- `src/divergence_free_interpolant/_wendland_table.py` is generated: never edit it by hand, change
+  `tools/gen_kernels.py` (or the derivation in `_wendland_sympy.py`) and rerun it. sympy is an
+  optional dependency: only `_wendland_sympy.py` and sympy-defined boundaries may import it, and
+  only lazily.
 - Tests: `uv run pytest`. Warnings are treated as errors. The numpy reference implementation
   must keep passing too: `DFI_BACKEND=numpy uv run pytest`.

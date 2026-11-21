@@ -61,6 +61,14 @@ The compute-heavy parts are written in Rust. Installing from source (a git check
 platform without a pre-built wheel) therefore needs a Rust toolchain; [rustup](https://rustup.rs)
 is the easiest way to get one.
 
+The kernels for the usual parameters ship with the package, so sympy is optional. Install the
+`symbolic` extra for kernel parameters beyond those (see `k` and `nu` below), or to define
+boundaries with sympy expressions:
+
+```bash
+pip install "Divergence-Free-Interpolant[symbolic]"
+```
+
 ## Quick start
 
 ```python
@@ -120,6 +128,8 @@ interp(grid)
   ≥ 1. The default of 3 rarely needs changing.
 - **`nu`**: Wendland parameter. It defaults to the smallest value that keeps the kernel positive
   definite, `dim // 2 + k + 1`. Smaller values raise a `ValueError` when you fit.
+- **Shipped kernels:** k = 1–4, each with ν = k + 2 to k + 5. That covers the default ν in up to
+  9 dimensions. Other combinations are derived with sympy, which needs the `symbolic` extra.
 - **`solver`**:
   - `'direct'`: sparse factorisation.
   - `'cg'`: conjugate gradients, with relative tolerance `tol` (between 0 and 1).
@@ -206,9 +216,9 @@ interp = dfi.DivergenceFreeInterpolant(1.0).fit(
   - `Surface(function, s_interval, t_interval)`: `function(s, t)` maps to points `(..., 3)`.
 
   Either can be given as sympy expressions instead of a callable, which gives exact
-  derivatives; callables get numerical ones. A curve's normal points to the right of its
-  direction of travel, i.e. outwards for a counter-clockwise closed curve. A surface's normal is
-  `∂σ/∂s × ∂σ/∂t`.
+  derivatives (this needs the `symbolic` extra); callables get numerical ones. A curve's normal
+  points to the right of its direction of travel, i.e. outwards for a counter-clockwise closed
+  curve. A surface's normal is `∂σ/∂s × ∂σ/∂t`.
 - **Conditions:**
   - `NormalComponent(boundary, value=0)`: prescribes n·u. For flows, 0 is a no-penetration
     (slip) wall, and a non-zero value is an inflow or outflow. For curl-free fields it
@@ -233,7 +243,9 @@ interp = dfi.DivergenceFreeInterpolant(1.0).fit(
   closed boundary must have zero net flux, otherwise `fit` raises a `ValueError`. The flux
   through one segment then follows from the others, so that constraint is dropped to keep the
   system well-conditioned. Closed boundaries are detected automatically (coinciding ends of a
-  curve, coinciding or collapsing edges of a surface), or set with `closed=`.
+  curve, coinciding or collapsing edges of a surface), or set with `closed=`. A closed wall must
+  be a single `Curve` or `Surface`: one split into several open pieces is not recognised as
+  closed, so neither the check nor the dropped constraint applies to it.
 
 ### Performance
 
@@ -323,8 +335,10 @@ For a radial function ψ(r), with A(r) = ψ′(r)/r and H(r) = ψ″(r) − ψ�
 Every column of the first is divergence-free and every column of the second is curl-free. An
 interpolant s(x) = Σⱼ Φ(x − xⱼ) cⱼ therefore inherits that property exactly. The coefficients cⱼ
 are found by solving the sparse, symmetric positive definite system that makes s match the
-data. For Wendland's functions, A and H are polynomials in r, derived with sympy, and the same
-code works in any dimension.
+data. For Wendland's functions, A and H are polynomials in r, and the same code works in any
+dimension. Their exact coefficients are derived with sympy: for the usual parameters ahead of
+time (the table in `_wendland_table.py`, written by `tools/gen_kernels.py`), for others when
+first needed.
 
 ## Development
 
@@ -340,7 +354,9 @@ uv run ruff format         # format (enforced in CI)
 uv sync --group examples   # also install matplotlib, PyQt6 and pyvista for the examples
 ```
 
-After changing Rust code, `uv sync` rebuilds the extension. In `rust/`, `cargo test` tests the
+After changing Rust code, `uv sync` rebuilds the extension. The table of shipped kernels is
+generated: regenerate it with `uv run python tools/gen_kernels.py` (a test fails when it is out of
+date). In `rust/`, `cargo test` tests the
 core without Python, and `cargo fmt` and `cargo clippy --all-targets -- -D warnings` (with and
 without `--features python`) are enforced in CI.
 

@@ -1,8 +1,9 @@
 """The matrix-valued kernels evaluated through their radial form."""
 
+import numbers
+
 import numpy as np
 import pytest
-import sympy as sp
 
 from divergence_free_interpolant._kernel import (
     MatrixKernel,
@@ -24,7 +25,8 @@ def sample(rng, dim, n=40, low=0.05, high=0.95):
 @pytest.mark.parametrize("k", [1, 2, 3, 4])
 def test_radial_parts_are_polynomials_with_h_zero_at_origin(k):
     a, h = radial_coefficients(k + 2, k)
-    assert all(isinstance(c, sp.Rational) for c in a + h)
+    # Exact rationals (fractions.Fraction from the shipped table)
+    assert all(isinstance(c, numbers.Rational) for c in a + h)
     assert h[0] == 0  # H(0) = psi''(0) - lim psi'(r)/r = 0
     assert a[0] < 0  # psi decreases from its maximum at the origin
 
