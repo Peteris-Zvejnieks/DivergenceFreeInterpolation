@@ -1,4 +1,5 @@
-from sympy import product, symbols, Rational
+from sympy import Rational, product, symbols
+
 
 class _RBF:
     r, i, f = symbols('r i f')
@@ -7,7 +8,7 @@ class _RBF:
         self.nu = nu
         self.k = k
         eq = 0
-        for incr in range(0, k + 1):
+        for incr in range(k + 1):
             eq += self._beta(incr, k) * _RBF.r ** incr * self.p(nu + 2 * k - incr)
         self.eq = eq
 

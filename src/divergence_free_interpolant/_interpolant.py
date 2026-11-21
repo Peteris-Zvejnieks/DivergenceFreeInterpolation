@@ -1,11 +1,12 @@
-from scipy.linalg import svd as _svd
 import numpy as _np
+from scipy.linalg import svd as _svd
+
 from ._kernel import _RBF_kernel
 
 _METHODS = ('SVD', 'penrose', 'linsolve', 'lstsq')
 
 
-class interpolant():
+class interpolant:
     def __init__(self, nu: int = 5, k: int = 3, dim: int = 3):
         self.dim = dim
         self.kernel = _RBF_kernel(nu, k, dim).kernel_numpy
@@ -75,7 +76,7 @@ class interpolant():
         return tensor.swapaxes(1, 2).reshape(self.dim * N , self.dim * N, order='F')
 
     def _set_call(self):
-        signature = ('(),'*self.dim)[:-1] + '->(%i)'%self.dim
+        signature = ','.join(['()'] * self.dim) + f'->({self.dim})'
         self._evaluate = _np.vectorize(self._interpolate, signature=signature)
 
     def _interpolate(self, *point):

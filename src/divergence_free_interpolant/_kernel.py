@@ -1,9 +1,10 @@
 import numpy as np
-from sympy import var, lambdify, sqrt, Matrix, diff, limit
+from sympy import Matrix, diff, lambdify, limit, sqrt, var
 
 from ._wendland import _RBF
 
-class _RBF_kernel():
+
+class _RBF_kernel:
     def __init__(self, nu: int = 5, k: int = 3 , dim: int = 3):
         if dim not in [2, 3]:
             raise ValueError(f'dimension {dim} is not supported, only 2D and 3D are available')
