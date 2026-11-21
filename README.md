@@ -21,9 +21,9 @@ data sets accurately.
 A 2D flow reconstructed from 200 scattered velocity measurements, including its stream
 function, and a 3D flow of swirling vortices:
 
-![Divergence-free 2D](https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/refactor/graphics/2D_divergence_free.png)
+![Divergence-free 2D](https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/main/graphics/2D_divergence_free.png)
 
-![Divergence-free 3D](https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/refactor/graphics/3D_divergence_free.png)
+![Divergence-free 3D](https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/main/graphics/3D_divergence_free.png)
 
 ### Curl-free
 
@@ -31,16 +31,16 @@ A landscape reconstructed from 200 scattered slope measurements (the height map 
 potential), and an electric field with its equipotential surfaces recovered from field
 measurements:
 
-![Curl-free 2D](https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/refactor/graphics/2D_curl_free.png)
+![Curl-free 2D](https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/main/graphics/2D_curl_free.png)
 
-![Curl-free 3D](https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/refactor/graphics/3D_curl_free.png)
+![Curl-free 3D](https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/main/graphics/3D_curl_free.png)
 
 ### Multilevel
 
 A multi-scale flow reconstructed from 20 000 scattered velocity measurements, refined level by
 level from coarse to fine (flow speed shown):
 
-![Multilevel 2D](https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/refactor/graphics/2D_multilevel.png)
+![Multilevel 2D](https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/main/graphics/2D_multilevel.png)
 
 ### Boundary conditions
 
@@ -49,7 +49,7 @@ condition on the cylinder, the streamlines go around it instead of through it. A
 condition (`NormalComponent`), the wall is imposed in the mean over short segments; as a wall
 built into the kernel (`walls=`), exactly, everywhere along it:
 
-![Boundary conditions 2D](https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/refactor/graphics/2D_boundary_conditions.png)
+![Boundary conditions 2D](https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/main/graphics/2D_boundary_conditions.png)
 
 ## Installation
 
