@@ -47,3 +47,8 @@ module-root = ""
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+filterwarnings = ["error"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["Divergence_Free_Interpolant"]
+known-local-folder = ["conftest"]

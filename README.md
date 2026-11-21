@@ -45,25 +45,26 @@ The project is managed with [uv](https://docs.astral.sh/uv/).
   initialized_interpolant = dfi.interpolant(nu = 5, k = 3, dim = 3)
 ```
 `nu` - Radial basis function parameter: `int`, default value `5`, 
-in most cases does not have to be changed
+in most cases does not have to be changed. Must satisfy `nu >= k + 2`, otherwise the kernel
+is not guaranteed to be positive definite and a `ValueError` is raised
 
-`k` - Radial basis function parameter: `int`, default value `3`, 
-in most cases does not have to be changed
+`k` - Radial basis function parameter (smoothness): `int`, default value `3`, 
+in most cases does not have to be changed. Must be at least `1`
 
 `dim` - Dimensionality of space to interpolate: `int`, default value `3`,
 currently only supports `2` and `3`, can be expanded indefinitely.
 
 #### Condition the interpolant
 ```python
-  positions = np.random(3, 10)
-  vectorfield = np.random(3, 10)
-  initialized_interpolant.condition(positions, vectorfield, support_radius = 0.2, method = 'linsolve')
+  positions = np.random.rand(10, 3)
+  vectorfield = np.random.rand(10, 3)
+  initialized_interpolant.condition(positions, vectorfield, support_radii = 0.2, method = 'linsolve')
 ```
-`positions` - vector field coordinates: `np.ndarray`, `shape = (dim, N)`
+`positions` - vector field coordinates: `np.ndarray`, `shape = (N, dim)`
 
-`vectorfield` - vector field values: `np.ndarray`, `shape = (dim, N)`
+`vectorfield` - vector field values: `np.ndarray`, `shape = (N, dim)`
 
-`support_radius` - kernel radius: `float`, default value `1`
+`support_radii` - kernel support radius: `float`, default value `1`
 
 `method` - method to use for solving the linear system: `str`, default value `linsolve`,
 accepts `SVD, penrose, linsolve, lstsq`
@@ -79,11 +80,11 @@ accepts `SVD, penrose, linsolve, lstsq`
 
 `z` - z coordinates at which to interpolate: `array_like`
 
-`vector` - interoplated vector values at the given points: `np.ndarray`, `shape = (..., dim)`
+`vector` - interpolated vector values at the given points: `np.ndarray`, `shape = x.shape + (dim,)`
 
 `__call__` is vectorized
 
-if `dim == 2` will not accept the `z` component
+if `dim == 2` it takes only `x, y`; passing the wrong number of coordinates raises a `TypeError`
 
 See `examples/test_case_2D.py` and `examples/test_case_3D.py` for more detailed examples.
 ## References
