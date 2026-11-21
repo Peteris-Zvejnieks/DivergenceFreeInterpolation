@@ -35,14 +35,25 @@ examples = [
 ]
 
 [build-system]
-requires = ["uv_build>=0.13.9,<0.14.0"]
-build-backend = "uv_build"
+requires = ["maturin>=1.8,<2"]
+build-backend = "maturin"
+
+[tool.maturin]
+# The Rust core (rust/) is built as divergence_free_interpolant._core, inside the Python package
+manifest-path = "rust/Cargo.toml"
+python-source = "src"
+module-name = "divergence_free_interpolant._core"
+features = ["python", "pyo3/extension-module"]
 
 [tool.uv]
 default-groups = ["dev"]
-
-[tool.uv.build-backend]
-module-name = "divergence_free_interpolant"
+# Rebuild the extension when the Rust sources change
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "rust/Cargo.toml" },
+    { file = "rust/Cargo.lock" },
+    { file = "rust/src/**/*.rs" },
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

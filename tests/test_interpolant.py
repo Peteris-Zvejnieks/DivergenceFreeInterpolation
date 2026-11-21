@@ -9,7 +9,7 @@ from scipy.spatial import cKDTree
 from scipy.stats import qmc
 
 import divergence_free_interpolant as dfi
-from divergence_free_interpolant import _assembly
+from divergence_free_interpolant import _assembly, _backend
 
 from conftest import (
     CURL_FREE,
@@ -177,6 +177,8 @@ def test_gram_matrix_is_sparse_with_compact_support(kind):
 
 @pytest.mark.parametrize("kind", KINDS)
 def test_chunked_evaluation_matches_single_pass(kind, monkeypatch):
+    """The numpy reference implementation evaluates in chunks bounded by PAIR_BUDGET."""
+    monkeypatch.setattr(_backend, "BACKEND", "numpy")
     interp, _, _ = fitted(kind, 2, n=50, support=0.5)
     queries = np.random.default_rng(4).random((1000, 2))
     expected = interp(queries)

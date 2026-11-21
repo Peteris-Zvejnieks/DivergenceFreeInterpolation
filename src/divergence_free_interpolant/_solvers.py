@@ -6,6 +6,8 @@ import numpy as np
 from scipy import sparse
 from scipy.sparse import linalg as splinalg
 
+from . import _backend, _core
+
 SOLVERS = ("auto", "direct", "cg", "lstsq")
 
 # 'auto' factorises systems up to this many unknowns and uses conjugate gradients above it.
@@ -53,6 +55,35 @@ def resolve_solver(solver: str, unknowns: int, dim: int) -> str:
     )
 
 
+def _csr_arrays(matrix):
+    """(indptr, indices, data) of a sparse matrix in CSR form, as the Rust core expects."""
+    matrix = sparse.csr_array(matrix)
+    return (
+        np.ascontiguousarray(matrix.indptr, dtype=np.int64),
+        np.ascontiguousarray(matrix.indices, dtype=np.int64),
+        np.ascontiguousarray(matrix.data, dtype=float),
+    )
+
+
+def _scipy_cg(matrix, rhs, tol, preconditioner, maxiter):
+    """scipy's conjugate gradients (the reference implementation): (solution, info, iterations)."""
+    counter = [0]
+
+    def count(_):
+        counter[0] += 1
+
+    solution, info = splinalg.cg(
+        matrix,
+        rhs,
+        rtol=tol,
+        atol=0.0,
+        M=preconditioner,
+        maxiter=maxiter,
+        callback=count,
+    )
+    return solution, info, counter[0]
+
+
 def solve(matrix, rhs, solver: str, tol: float = 1e-10, preconditioner=None):
     """Solve matrix @ x = rhs with a resolved solver, returning (solution, SolveInfo).
 
@@ -79,21 +110,19 @@ def solve(matrix, rhs, solver: str, tol: float = 1e-10, preconditioner=None):
     elif solver == "cg":
         if preconditioner is None:
             preconditioner = sparse.diags_array(1 / matrix.diagonal())
-        counter = [0]
-
-        def count(_):
-            counter[0] += 1
-
-        solution, info = splinalg.cg(
-            matrix,
-            rhs,
-            rtol=tol,
-            atol=0.0,
-            M=preconditioner,
-            maxiter=min(10 * len(rhs), CG_MAX_ITERATIONS),
-            callback=count,
-        )
-        iterations = counter[0]
+        maxiter = min(10 * len(rhs), CG_MAX_ITERATIONS)
+        if _backend.use_numpy():
+            solution, info, iterations = _scipy_cg(
+                matrix, rhs, tol, preconditioner, maxiter
+            )
+        else:
+            solution, iterations, info = _core.conjugate_gradients(
+                _csr_arrays(matrix),
+                _csr_arrays(preconditioner),
+                np.ascontiguousarray(rhs, dtype=float),
+                float(tol),
+                maxiter,
+            )
         if info > 0:
             raise np.linalg.LinAlgError(
                 f"conjugate gradients did not reach rtol = {tol:g} in {info} iterations; the "
@@ -102,7 +131,7 @@ def solve(matrix, rhs, solver: str, tol: float = 1e-10, preconditioner=None):
             )
         if info < 0:
             raise np.linalg.LinAlgError(
-                f"conjugate gradients broke down (scipy info = {info}); the system is not "
+                f"conjugate gradients broke down (info = {info}); the system is not "
                 f"positive definite"
             )
     elif solver == "lstsq":

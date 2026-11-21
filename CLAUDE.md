@@ -8,4 +8,9 @@
   automatically. Import blocks are sorted: stdlib, third-party, `divergence_free_interpolant`,
   then local test helpers such as `conftest`. Put comments on their own line rather than after
   code that may get wrapped.
-- Tests: `uv run pytest`. Warnings are treated as errors.
+- Rust code (the `rust/` crate, built as `divergence_free_interpolant._core`) must be formatted
+  with `cargo fmt` and pass `cargo clippy --all-targets -- -D warnings`, both without and with
+  `--features python`; run them from `rust/` (CI enforces all of this). `cargo test` tests the
+  core without Python. After changing Rust code, `uv sync` rebuilds the extension.
+- Tests: `uv run pytest`. Warnings are treated as errors. The numpy reference implementation
+  must keep passing too: `DFI_BACKEND=numpy uv run pytest`.

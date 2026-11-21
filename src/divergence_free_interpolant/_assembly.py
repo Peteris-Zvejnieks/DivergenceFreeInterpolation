@@ -1,16 +1,72 @@
-"""Sparse assembly and evaluation of matrix-kernel interpolants using KD-tree neighbour search."""
+"""Sparse assembly and evaluation of matrix-kernel interpolants.
+
+The Rust core (`_core`) does the work, in parallel. The numpy versions (`*_numpy`, using scipy's
+KD-tree) are the reference implementation it is tested against; see `_backend`.
+"""
 
 import numpy as np
 from scipy import sparse
 from scipy.spatial import cKDTree
+
+from . import _backend, _core
 
 # Queries are evaluated in chunks holding at most this many query-node pairs, which bounds the
 # memory of the (pairs, d, d) kernel blocks and their temporaries (a few hundred MB in 3D).
 PAIR_BUDGET = 500_000
 
 
+def _contiguous(array):
+    return np.ascontiguousarray(array, dtype=float)
+
+
 def gram_matrix(kernel, points, support_radius, tree=None):
-    """Sparse symmetric interpolation matrix with d x d blocks Phi(x_i - x_j), shape (N d, N d)."""
+    """Sparse symmetric interpolation matrix with d x d blocks Phi(x_i - x_j), shape (N d, N d).
+
+    `tree` (a scipy KD-tree of the points) is only used by the numpy implementation.
+    """
+    if _backend.use_numpy():
+        return _gram_matrix_numpy(kernel, points, support_radius, tree)
+    indptr, indices, data = _core.gram_matrix(
+        kernel.core, _contiguous(points), float(support_radius)
+    )
+    return sparse.csr_array((data, indices, indptr), shape=(points.size, points.size))
+
+
+def evaluate(kernel, tree, nodes, coefficients, queries, support_radius):
+    """sum_j Phi(q - x_j) c_j for queries (M, d), with coefficients (N, d); returns (M, d)."""
+    if _backend.use_numpy():
+        return _evaluate_numpy(
+            kernel, tree, nodes, coefficients, queries, support_radius
+        )
+    values = _core.evaluate(
+        kernel.core,
+        _contiguous(nodes),
+        _contiguous(coefficients),
+        _contiguous(queries),
+        float(support_radius),
+    )
+    return values.reshape(queries.shape)
+
+
+def evaluate_potential(kernel, tree, nodes, coefficients, queries, support_radius):
+    """Scalar potential (see MatrixKernel.potential_terms) at queries (M, d); returns (M,)."""
+    if _backend.use_numpy():
+        return _evaluate_potential_numpy(
+            kernel, tree, nodes, coefficients, queries, support_radius
+        )
+    return _core.evaluate_potential(
+        kernel.core,
+        _contiguous(nodes),
+        _contiguous(coefficients),
+        _contiguous(queries),
+        float(support_radius),
+    )
+
+
+# --- numpy reference implementation ----------------------------------------------------------
+
+
+def _gram_matrix_numpy(kernel, points, support_radius, tree=None):
     n, d = points.shape
     tree = cKDTree(points) if tree is None else tree
     pairs = tree.query_pairs(support_radius, output_type="ndarray")
@@ -59,8 +115,7 @@ def _pairs_in_chunks(tree, queries, support_radius):
         yield chunk, pairs["i"], pairs["j"]
 
 
-def evaluate(kernel, tree, nodes, coefficients, queries, support_radius):
-    """sum_j Phi(q - x_j) c_j for queries (M, d), with coefficients (N, d); returns (M, d)."""
+def _evaluate_numpy(kernel, tree, nodes, coefficients, queries, support_radius):
     out = np.zeros(queries.shape)
     for chunk, i, j in _pairs_in_chunks(tree, queries, support_radius):
         blocks = kernel.blocks(queries[chunk][i] - nodes[j], support_radius)
@@ -73,8 +128,9 @@ def evaluate(kernel, tree, nodes, coefficients, queries, support_radius):
     return out
 
 
-def evaluate_potential(kernel, tree, nodes, coefficients, queries, support_radius):
-    """Scalar potential (see MatrixKernel.potential_terms) at queries (M, d); returns (M,)."""
+def _evaluate_potential_numpy(
+    kernel, tree, nodes, coefficients, queries, support_radius
+):
     out = np.zeros(len(queries))
     for chunk, i, j in _pairs_in_chunks(tree, queries, support_radius):
         terms = kernel.potential_terms(

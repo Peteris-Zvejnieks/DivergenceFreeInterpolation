@@ -232,11 +232,12 @@ def test_auto_uses_direct_for_mid_size_3d_systems():
     assert resolve_solver("auto", 2 * 100_000, 2) == "direct"
 
 
-def test_auto_falls_back_to_direct_when_cg_fails(monkeypatch):
+def test_auto_falls_back_to_direct_when_cg_fails(each_backend, monkeypatch):
     from divergence_free_interpolant import _interpolant, _solvers
 
     monkeypatch.setattr(_interpolant, "resolve_solver", lambda *args: "cg")
-    monkeypatch.setattr(_solvers.splinalg, "cg", lambda *args, **kwargs: (args[1], 17))
+    # Two iterations are not enough, so CG really fails
+    monkeypatch.setattr(_solvers, "CG_MAX_ITERATIONS", 2)
     interp, points, values = fitted("divergence_free", 3, n=50)
     assert interp.solve_info.solver == "direct"
     np.testing.assert_allclose(interp(points), values, atol=1e-9)
@@ -245,29 +246,16 @@ def test_auto_falls_back_to_direct_when_cg_fails(monkeypatch):
         fitted("divergence_free", 3, n=50, solver="cg")
 
 
-def test_cg_iterations_are_capped(monkeypatch):
+def test_cg_iterations_are_capped_and_reported(each_backend, monkeypatch):
     from divergence_free_interpolant import _solvers
 
-    calls = []
-    original = _solvers.splinalg.cg
-
-    def spy(*args, **kwargs):
-        calls.append(kwargs["maxiter"])
-        return original(*args, **kwargs)
-
-    monkeypatch.setattr(_solvers.splinalg, "cg", spy)
-    # 400 unknowns would allow 4000 iterations; the cap lowers that
-    monkeypatch.setattr(_solvers, "CG_MAX_ITERATIONS", 3000)
-    fitted("curl_free", 2, n=200, support=0.2, solver="cg")
-    assert calls == [3000]
-
-
-def test_cg_reports_unreachable_tolerance(monkeypatch):
-    from divergence_free_interpolant import _solvers
-
-    monkeypatch.setattr(_solvers.splinalg, "cg", lambda *args, **kwargs: (args[1], 17))
-    with pytest.raises(np.linalg.LinAlgError, match="did not reach rtol"):
-        fitted("curl_free", 2, n=10, solver="cg")
+    interp, _, _ = fitted("curl_free", 2, n=200, support=0.2, solver="cg")
+    assert 0 < interp.solve_info.iterations <= 10 * 400
+    monkeypatch.setattr(_solvers, "CG_MAX_ITERATIONS", 3)
+    with pytest.raises(
+        np.linalg.LinAlgError, match="did not reach rtol .* in 3 iterations"
+    ):
+        fitted("curl_free", 2, n=200, support=0.2, solver="cg")
 
 
 def test_changing_parameters_after_fit_only_affects_the_next_fit():
@@ -293,12 +281,27 @@ def test_cg_tolerance_is_respected(tol):
     assert error < 10 * tol
 
 
-def test_cg_breakdown_message(monkeypatch):
-    from divergence_free_interpolant import _solvers
+def test_cg_breakdown_message_from_scipy(monkeypatch):
+    from divergence_free_interpolant import _backend, _solvers
 
+    monkeypatch.setattr(_backend, "BACKEND", "numpy")
     monkeypatch.setattr(_solvers.splinalg, "cg", lambda *args, **kwargs: (args[1], -1))
     with pytest.raises(np.linalg.LinAlgError, match="broke down"):
         fitted("curl_free", 2, n=10, solver="cg")
+
+
+def test_cg_breakdown_on_an_indefinite_matrix(monkeypatch):
+    """The Rust conjugate gradients detect non-positive curvature."""
+    from scipy import sparse
+
+    from divergence_free_interpolant import _backend
+    from divergence_free_interpolant._solvers import solve
+
+    monkeypatch.setattr(_backend, "BACKEND", "rust")
+
+    indefinite = sparse.csr_array(sparse.diags_array([1.0, -2.0, 1.0]))
+    with pytest.raises(np.linalg.LinAlgError, match="broke down"):
+        solve(indefinite, np.array([0.0, 1.0, 0.0]), "cg")
 
 
 def test_modifying_input_arrays_after_fit_has_no_effect():

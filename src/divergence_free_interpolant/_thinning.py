@@ -5,6 +5,8 @@ import heapq
 import numpy as np
 from scipy.spatial import cKDTree
 
+from . import _backend, _core
+
 
 def farthest_point_ordering(points, stop_radius=0.0, tree=None):
     """Greedy farthest-point ordering of (N, d) points.
@@ -21,10 +23,18 @@ def farthest_point_ordering(points, stop_radius=0.0, tree=None):
     Only points within the current radius of a newly picked point can move closer to the picked
     set, so with a KD-tree the cost is about O(N log N) rather than O(N^2).
     """
-    points = np.asarray(points, dtype=float)
+    points = np.ascontiguousarray(points, dtype=float)
+    start = int(np.argmin(np.linalg.norm(points - points.mean(axis=0), axis=1)))
+    if not _backend.use_numpy():
+        order, radii = _core.farthest_point_ordering(points, start, float(stop_radius))
+        return order.astype(np.intp), radii
+    return _farthest_point_ordering_numpy(points, start, stop_radius, tree)
+
+
+def _farthest_point_ordering_numpy(points, start, stop_radius, tree=None):
+    """The numpy/heapq reference implementation (`tree`: a scipy KD-tree of the points)."""
     n = len(points)
     tree = cKDTree(points) if tree is None else tree
-    start = int(np.argmin(np.linalg.norm(points - points.mean(axis=0), axis=1)))
 
     distance = np.linalg.norm(points - points[start], axis=1)
     distance[start] = 0.0

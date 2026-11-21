@@ -14,3 +14,8 @@ misc/
 
 dist/
 *.egg-info/
+
+# Rust build artefacts and the compiled extension module
+rust/target/
+src/divergence_free_interpolant/*.so
+src/divergence_free_interpolant/*.pyd

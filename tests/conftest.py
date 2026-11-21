@@ -78,3 +78,12 @@ def jacobian(function, points, h=1e-4):
 @pytest.fixture
 def rng():
     return np.random.default_rng(12345)
+
+
+@pytest.fixture(params=["rust", "numpy"])
+def each_backend(request, monkeypatch):
+    """Runs a test with the Rust core and with the numpy reference implementation."""
+    from divergence_free_interpolant import _backend
+
+    monkeypatch.setattr(_backend, "BACKEND", request.param)
+    return request.param

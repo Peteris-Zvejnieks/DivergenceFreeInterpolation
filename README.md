@@ -57,6 +57,10 @@ uv add Divergence-Free-Interpolant
 pip install Divergence-Free-Interpolant
 ```
 
+The compute-heavy parts are written in Rust. Installing from source (a git checkout, or a
+platform without a pre-built wheel) therefore needs a Rust toolchain; [rustup](https://rustup.rs)
+is the easiest way to get one.
+
 ## Quick start
 
 ```python
@@ -233,17 +237,23 @@ interp = dfi.DivergenceFreeInterpolant(1.0).fit(
 
 ### Performance
 
-The kernels have compact support, so fitting builds a sparse system via KD-tree neighbour search,
-and evaluation only visits nearby samples. Conjugate gradients uses a block-Jacobi preconditioner
-over clusters of unusually close points, which random data always has.
+The kernels have compact support, so fitting builds a sparse system via kd-tree neighbour search,
+and evaluation only visits nearby samples. Assembly, evaluation, the farthest-point thinning
+and conjugate gradients run in parallel in a Rust core. Conjugate gradients uses a block-Jacobi
+preconditioner over clusters of unusually close points, which random data always has. Direct
+solves use scipy's sparse factorisation.
 
-Timings on one desktop machine, random points in the unit square/cube, `'auto'` solver. A
-single level with about 30 (2D) or 50 (3D) neighbours per point (`benchmarks/bench_scaling.py`):
+Timings on one desktop machine (12 cores), random points in the unit square/cube, `'auto'`
+solver. A single level with about 30 (2D) or 50 (3D) neighbours per point
+(`benchmarks/bench_scaling.py`):
 
 | single level | 1 000 points | 10 000 points | 100 000 points | evaluation |
 |---|---|---|---|---|
-| 2D fit | 0.05 s | 0.25 s | 7.6 s | 4–5 µs / point |
-| 3D fit | 0.07 s | 0.34 s | 3.6 s | 7–12 µs / point |
+| 2D fit | 0.05 s | 0.25 s | 7.5 s | 0.1–0.5 µs / point |
+| 3D fit | 0.07 s | 0.12 s | 1.4 s | 0.2–0.8 µs / point |
+
+The 2D fits are dominated by the direct sparse factorisation; in 3D, `'auto'` uses conjugate
+gradients from 15k unknowns.
 
 Such small supports are fast but inaccurate. The multilevel interpolant (default settings) is
 far more accurate for a few times the cost. Here is the RMS error against a smooth analytic
@@ -251,10 +261,10 @@ field (`benchmarks/bench_multilevel.py`):
 
 | | 10 000 points | 100 000 points |
 |---|---|---|
-| 2D single level | 0.25 s, error 1.1 | 7.5 s, error 1.1 |
-| 2D multilevel | 0.8 s, error 7.5 · 10⁻⁴ | 13 s, error 6.1 · 10⁻⁵ |
-| 3D single level | 0.34 s, error 0.70 | 3.6 s, error 0.70 |
-| 3D multilevel | 3.5 s, error 1.9 · 10⁻³ | 56 s, error 1.8 · 10⁻⁴ |
+| 2D single level | 0.26 s, error 1.1 | 7.1 s, error 1.1 |
+| 2D multilevel | 0.34 s, error 7.5 · 10⁻⁴ | 6.3 s, error 6.1 · 10⁻⁵ |
+| 3D single level | 0.11 s, error 0.70 | 1.3 s, error 0.70 |
+| 3D multilevel | 1.0 s, error 1.9 · 10⁻³ | 13 s, error 1.8 · 10⁻⁴ |
 
 ## Examples
 
@@ -318,15 +328,25 @@ code works in any dimension.
 
 ## Development
 
-The project is managed with [uv](https://docs.astral.sh/uv/).
+The project is managed with [uv](https://docs.astral.sh/uv/), and needs a Rust toolchain
+(1.87 or newer, e.g. via [rustup](https://rustup.rs)) for the core in `rust/`. That core is
+built by [maturin](https://www.maturin.rs) as `divergence_free_interpolant._core`.
 
 ```bash
-uv sync                    # create .venv with the package (editable) + dev tools
+uv sync                    # build the Rust core, create .venv with the package (editable) + dev tools
 uv run pytest              # run the tests
 uv run ruff check          # lint (enforced in CI)
 uv run ruff format         # format (enforced in CI)
 uv sync --group examples   # also install matplotlib, PyQt6 and pyvista for the examples
 ```
+
+After changing Rust code, `uv sync` rebuilds the extension. In `rust/`, `cargo test` tests the
+core without Python, and `cargo fmt` and `cargo clippy --all-targets -- -D warnings` (with and
+without `--features python`) are enforced in CI.
+
+The numpy implementations of assembly, evaluation, thinning and conjugate gradients stay as the
+reference the Rust core is tested against. Run with `DFI_BACKEND=numpy` to use them, e.g.
+`DFI_BACKEND=numpy uv run pytest`.
 
 `benchmarks/` holds timing scripts. `research/` holds exploratory spikes, such as
 `research/boundary_weighted_kernel.py`, which tests imposing wall conditions exactly through a

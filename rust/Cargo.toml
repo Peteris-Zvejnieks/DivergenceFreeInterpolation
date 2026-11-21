@@ -1,0 +1,23 @@
+[package]
+name = "divergence_free_interpolant_core"
+version = "0.2.0"
+edition = "2024"
+rust-version = "1.87"
+description = "Rust core of the divergence_free_interpolant Python package"
+license = "MIT"
+publish = false
+
+[lib]
+# Built by maturin as divergence_free_interpolant._core; the rlib lets `cargo test` link
+name = "_core"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+numpy = { version = "0.30.0", optional = true }
+pyo3 = { version = "0.30", optional = true }
+rayon = "1.12.0"
+
+[features]
+# The Python bindings. Off for `cargo test`, so the pure Rust core is tested without Python;
+# maturin enables it (together with pyo3/extension-module, see pyproject.toml).
+python = ["dep:pyo3", "dep:numpy"]

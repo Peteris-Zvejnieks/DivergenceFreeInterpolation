@@ -19,6 +19,7 @@ from functools import lru_cache
 import numpy as np
 from numpy.polynomial import polynomial
 
+from . import _core
 from ._wendland import minimal_nu, wendland_coefficients
 
 DIVERGENCE_FREE = "divergence_free"
@@ -84,6 +85,8 @@ class MatrixKernel:
         a, h = radial_coefficients(self.nu, self.k)
         self._a = np.array(a, dtype=float)
         self._h = np.array(h, dtype=float)
+        # The same kernel in the Rust core, which assembles and evaluates with it
+        self.core = _core.RadialKernel(kind, dim, self._a.tolist(), self._h.tolist())
 
     def _radial_parts(self, u):
         """A(r), H(r) and xhat for scaled differences u (..., d); zero outside the support."""

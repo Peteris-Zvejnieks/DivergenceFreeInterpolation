@@ -6,7 +6,20 @@ on:
   pull_request:
 
 jobs:
-  test:
+  rust:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: rust
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo clippy --all-targets --features python -- -D warnings
+      - run: cargo test
+
+  python:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -17,7 +30,12 @@ jobs:
       - uses: astral-sh/setup-uv@v6
         with:
           python-version: ${{ matrix.python-version }}
+      # Builds the Rust extension (maturin) with the runner's Rust toolchain
       - run: uv sync --locked
       - run: uv run ruff check
       - run: uv run ruff format --check
       - run: uv run pytest
+      # The numpy reference implementation the Rust core is tested against
+      - run: uv run pytest
+        env:
+          DFI_BACKEND: numpy
