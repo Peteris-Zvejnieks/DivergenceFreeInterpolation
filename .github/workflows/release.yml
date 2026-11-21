@@ -1,0 +1,84 @@
+name: Release
+
+# Builds abi3 wheels (one per platform, for every Python >= 3.10) and the sdist, tests every
+# wheel that runs on its build machine, and publishes to PyPI for a version tag (trusted
+# publishing: no API token, see README "Releasing"). Run it by hand to build without publishing.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wheels:
+    name: wheel ${{ matrix.os }} ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64, test: true }
+          - { os: ubuntu-24.04-arm, target: aarch64, test: true }
+          - { os: macos-latest, target: aarch64, test: true }
+          - { os: macos-latest, target: x86_64, test: false }
+          - { os: windows-latest, target: x64, test: true }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist
+          # manylinux2014 (glibc 2.17); ignored on macOS and Windows
+          manylinux: "2014"
+      - name: Test the wheel
+        if: matrix.test
+        shell: bash
+        run: |
+          python -m pip install dist/*.whl pytest ruff sympy
+          python -m pytest -p no:cacheprovider
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.os }}-${{ matrix.target }}
+          path: dist
+
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check that the tag matches the package version
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -1)
+          test "${GITHUB_REF_NAME#v}" = "$version" || {
+            echo "tag $GITHUB_REF_NAME does not match version $version"; exit 1; }
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [wheels, sdist]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/Divergence-Free-Interpolant
+    permissions:
+      # Trusted publishing
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1

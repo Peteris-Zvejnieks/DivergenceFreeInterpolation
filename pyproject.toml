@@ -8,9 +8,16 @@ license = "MIT"
 license-files = ["LICENSE"]
 keywords = ["Interpolation", "Vector-Field", "Radial-Basis-Functions", "Divergence-Free", "Curl-Free"]
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
     "Programming Language :: Python :: 3",
-    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Rust",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
     "Topic :: Scientific/Engineering :: Mathematics",
+    "Topic :: Scientific/Engineering :: Physics",
 ]
 requires-python = ">=3.10"
 dependencies = [
@@ -48,7 +55,8 @@ build-backend = "maturin"
 manifest-path = "rust/Cargo.toml"
 python-source = "src"
 module-name = "divergence_free_interpolant._core"
-features = ["python", "pyo3/extension-module"]
+# abi3: one wheel per platform for every Python >= 3.10
+features = ["python", "pyo3/extension-module", "pyo3/abi3-py310"]
 
 [tool.uv]
 default-groups = ["dev"]

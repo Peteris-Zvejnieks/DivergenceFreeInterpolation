@@ -20,7 +20,7 @@ def _contiguous(array):
 
 
 def gram_matrix(kernel, points, support_radius, tree=None):
-    """Sparse symmetric interpolation matrix with d x d blocks Phi(x_i - x_j), shape (N d, N d).
+    """Sparse symmetric interpolation matrix with d x d blocks K(x_i, x_j), shape (N d, N d).
 
     `tree` (a scipy KD-tree of the points) is only used by the numpy implementation.
     """
@@ -33,7 +33,7 @@ def gram_matrix(kernel, points, support_radius, tree=None):
 
 
 def evaluate(kernel, tree, nodes, coefficients, queries, support_radius):
-    """sum_j Phi(q - x_j) c_j for queries (M, d), with coefficients (N, d); returns (M, d)."""
+    """sum_j K(q, x_j) c_j for queries (M, d), with coefficients (N, d); returns (M, d)."""
     if _backend.use_numpy():
         return _evaluate_numpy(
             kernel, tree, nodes, coefficients, queries, support_radius
@@ -71,16 +71,14 @@ def _gram_matrix_numpy(kernel, points, support_radius, tree=None):
     tree = cKDTree(points) if tree is None else tree
     pairs = tree.query_pairs(support_radius, output_type="ndarray")
     i, j = pairs[:, 0], pairs[:, 1]
-    off_diagonal = kernel.blocks(points[i] - points[j], support_radius)
-    diagonal = kernel.blocks(np.zeros(d), support_radius)
+    off_diagonal = kernel.pair_blocks(points[i], points[j], support_radius)
+    diagonal = kernel.pair_blocks(points, points, support_radius)
     nodes = np.arange(n)
 
-    # Phi is even and symmetric, so block (j, i) equals block (i, j)
+    # Block (j, i) is the transpose of block (i, j)
     row_nodes = np.concatenate([i, j, nodes])
     col_nodes = np.concatenate([j, i, nodes])
-    data = np.concatenate(
-        [off_diagonal, off_diagonal, np.broadcast_to(diagonal, (n, d, d))]
-    )
+    data = np.concatenate([off_diagonal, np.swapaxes(off_diagonal, 1, 2), diagonal])
 
     component = np.arange(d)
     rows = d * row_nodes[:, None, None] + component[None, :, None]
@@ -118,7 +116,7 @@ def _pairs_in_chunks(tree, queries, support_radius):
 def _evaluate_numpy(kernel, tree, nodes, coefficients, queries, support_radius):
     out = np.zeros(queries.shape)
     for chunk, i, j in _pairs_in_chunks(tree, queries, support_radius):
-        blocks = kernel.blocks(queries[chunk][i] - nodes[j], support_radius)
+        blocks = kernel.pair_blocks(queries[chunk][i], nodes[j], support_radius)
         contributions = np.einsum("pab,pb->pa", blocks, coefficients[j])
         size = chunk.stop - chunk.start
         for axis in range(queries.shape[1]):
@@ -133,8 +131,8 @@ def _evaluate_potential_numpy(
 ):
     out = np.zeros(len(queries))
     for chunk, i, j in _pairs_in_chunks(tree, queries, support_radius):
-        terms = kernel.potential_terms(
-            queries[chunk][i] - nodes[j], coefficients[j], support_radius
+        terms = kernel.pair_potential_terms(
+            queries[chunk][i], nodes[j], coefficients[j], support_radius
         )
         out[chunk] = np.bincount(i, weights=terms, minlength=chunk.stop - chunk.start)
     return out

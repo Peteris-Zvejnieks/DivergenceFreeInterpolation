@@ -38,7 +38,7 @@ pub trait PairKernel: Sync {
 }
 
 /// Horner evaluation of a polynomial with ascending coefficients.
-fn polynomial(coefficients: &[f64], r: f64) -> f64 {
+pub(crate) fn polynomial(coefficients: &[f64], r: f64) -> f64 {
     coefficients.iter().rev().fold(0.0, |sum, &c| sum * r + c)
 }
 

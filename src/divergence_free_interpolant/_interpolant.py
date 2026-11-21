@@ -18,6 +18,7 @@ from ._solvers import (
     solve,
     validate_tolerance,
 )
+from .walls import as_walls, restrict_functionals
 
 # Boundary functionals are preconditioned with exact inverses of blocks of this many
 # consecutive functionals (segments are numbered along the boundary, so blocks are local)
@@ -28,8 +29,10 @@ BOUNDARY_BLOCK = 256
 class _Fit:
     kernel: MatrixKernel
     support_radius: float
-    nodes: np.ndarray  # (P, d) points the kernels are centred on
-    coefficients: np.ndarray  # (P, d)
+    # (P, d) points the kernels are centred on
+    nodes: np.ndarray
+    # (P, d)
+    coefficients: np.ndarray
     tree: cKDTree
     solve_info: SolveInfo
 
@@ -90,6 +93,18 @@ def as_conditions(conditions, dim):
     return conditions
 
 
+def check_duplicates(points, tree=None):
+    """Raise if two points coincide, which makes the interpolation system singular."""
+    tree = cKDTree(points) if tree is None else tree
+    duplicates = tree.query_pairs(0.0, output_type="ndarray")
+    if len(duplicates):
+        i, j = np.sort(duplicates[0])
+        raise ValueError(
+            f"points {i} and {j} coincide, which makes the system singular; "
+            f"merge duplicate points or use solver='lstsq'"
+        )
+
+
 def median_spacing(points):
     """Median distance from each point to its nearest neighbour (None for a single point)."""
     if len(points) < 2:
@@ -141,12 +156,16 @@ class _MatrixKernelInterpolant:
         self.nu = nu
         self.solver = solver
         self.tol = tol
+        self.walls = ()
         self._fit = None
 
     @property
     def dim(self) -> int | None:
         """Dimension of the fitted data, None before fit()."""
         return None if self._fit is None else self._fit.kernel.dim
+
+    def _kernel(self, dim):
+        return get_kernel(self._kind, dim, self.nu, self.k, as_walls(self.walls))
 
     def fit(self, points, values, conditions=()):
         """Interpolate vector `values` (N, dim) given at `points` (N, dim). Returns self.
@@ -157,18 +176,25 @@ class _MatrixKernelInterpolant:
         """
         points, values = _as_data(points, values)
         conditions = as_conditions(conditions, points.shape[1])
-        if not conditions:
-            self._fit_functionals(points, None, values.ravel())
-            return self
-        spacing = median_spacing(points)
-        default = self.support_radius / 2
-        if spacing is not None and spacing > 0:
-            default = min(default, spacing)
-        lengths = [c.default_segment_length(default) for c in conditions]
-        atoms, weights, targets = assemble(
-            points, values, conditions, lengths, self._kind == DIVERGENCE_FREE
+        walls = self._kernel(points.shape[1]).walls
+        if walls and self.solver != "lstsq":
+            # Points on walls are not among the plain point values checked when fitting
+            check_duplicates(points)
+        if conditions:
+            spacing = median_spacing(points)
+            default = self.support_radius / 2
+            if spacing is not None and spacing > 0:
+                default = min(default, spacing)
+            lengths = [c.default_segment_length(default) for c in conditions]
+            atoms, weights, targets = assemble(
+                points, values, conditions, lengths, self._kind == DIVERGENCE_FREE
+            )
+        else:
+            atoms, weights, targets = points, None, values.ravel()
+        atoms, weights, targets, identity_points = restrict_functionals(
+            walls, atoms, weights, targets, len(points)
         )
-        self._fit_functionals(atoms, weights, targets, identity_points=len(points))
+        self._fit_functionals(atoms, weights, targets, identity_points)
         return self
 
     @property
@@ -204,20 +230,16 @@ class _MatrixKernelInterpolant:
         """
         support_radius = self.support_radius
         dim = points.shape[1]
-        kernel = get_kernel(self._kind, dim, self.nu, self.k)
+        kernel = self._kernel(dim)
         tree = cKDTree(points)
         if weights is None:
             identity_points = len(points)
         identity_points = identity_points or 0
         if identity_points and self.solver != "lstsq":
-            duplicates = tree.query_pairs(0.0, output_type="ndarray")
-            duplicates = duplicates[np.all(duplicates < identity_points, axis=1)]
-            if len(duplicates):
-                i, j = duplicates[0]
-                raise ValueError(
-                    f"points {i} and {j} coincide, which makes the system singular; "
-                    f"merge duplicate points or use solver='lstsq'"
-                )
+            check_duplicates(
+                points[:identity_points],
+                tree if identity_points == len(points) else None,
+            )
         matrix = gram_matrix(kernel, points, support_radius, tree)
         if weights is not None:
             matrix = (weights.T @ matrix @ weights).tocsr()
@@ -265,8 +287,7 @@ class _MatrixKernelInterpolant:
 
     def _gram_matrix(self, points):
         points = _as_points(points)
-        kernel = get_kernel(self._kind, points.shape[1], self.nu, self.k)
-        return gram_matrix(kernel, points, self.support_radius)
+        return gram_matrix(self._kernel(points.shape[1]), points, self.support_radius)
 
     def _scalar_potential(self, points):
         fit = self._require_fit()
@@ -321,9 +342,27 @@ class DivergenceFreeInterpolant(_MatrixKernelInterpolant):
         with 'direct' when feasible.
     tol : float, default 1e-10
         Relative residual tolerance of the 'cg' solver.
+    walls : wall or sequence of walls, optional
+        Walls from the `walls` module (Circle, Sphere, Line, Plane, Cylinder) that the field
+        satisfies exactly, everywhere along them: no penetration (u . n = 0) or no slip
+        (u = 0). They are built into the kernel, so they add no unknowns. Data points on a wall
+        keep only the components it leaves free.
     """
 
     _kind = DIVERGENCE_FREE
+
+    def __init__(
+        self,
+        support_radius: float,
+        *,
+        k: int = 3,
+        nu: int | None = None,
+        solver: str = "auto",
+        tol: float = 1e-10,
+        walls=(),
+    ):
+        super().__init__(support_radius, k=k, nu=nu, solver=solver, tol=tol)
+        self.walls = as_walls(walls)
 
     def stream_function(self, points):
         """2D only: stream function psi with interpolant (d psi/dy, -d psi/dx); shape (...,).

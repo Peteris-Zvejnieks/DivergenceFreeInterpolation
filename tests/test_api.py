@@ -75,10 +75,14 @@ def test_non_finite_input_raises(kind):
 @pytest.mark.parametrize(
     "points_shape, values_shape",
     [
-        ((10, 3), (3, 10)),  # values transposed, the old (dim, N) layout
-        ((10, 3), (9, 3)),  # mismatched number of points
-        ((30,), (30,)),  # flat arrays
-        ((0, 3), (0, 3)),  # no points
+        # values transposed, the old (dim, N) layout
+        ((10, 3), (3, 10)),
+        # mismatched number of points
+        ((10, 3), (9, 3)),
+        # flat arrays
+        ((30,), (30,)),
+        # no points
+        ((0, 3), (0, 3)),
     ],
 )
 def test_wrong_input_shapes_raise(points_shape, values_shape):
@@ -454,7 +458,8 @@ def test_legacy_attributes():
         legacy = dfi.interpolant(nu=5, k=3, dim=2)
     np.testing.assert_array_equal(legacy.zero_kernel, np.zeros((2, 2)))
     for name in ["XY", "sol", "N", "support_radii", "method"]:
-        assert not hasattr(legacy, name)  # as in 0.1: only set by condition()
+        # as in 0.1: only set by condition()
+        assert not hasattr(legacy, name)
     legacy.condition(points, values, support_radii=0.6, method="SVD")
     np.testing.assert_array_equal(legacy.XY, points)
     assert legacy.sol.shape == (12, 2, 1)
@@ -506,3 +511,14 @@ def test_legacy_errors():
         legacy_3d(x=0.1, y=0.2)
     with pytest.deprecated_call(), pytest.raises(ValueError, match="dimension"):
         dfi.interpolant(dim=4)
+
+
+def test_version_matches_the_package_metadata():
+    import re
+    from pathlib import Path
+
+    pyproject = Path(__file__).parents[1] / "pyproject.toml"
+    if not pyproject.exists():
+        pytest.skip("not run from a source checkout")
+    version = re.search(r'^version = "(.+)"', pyproject.read_text(), re.MULTILINE)
+    assert dfi.__version__ == version.group(1)

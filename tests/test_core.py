@@ -131,9 +131,9 @@ def test_core_validates_its_inputs():
     with pytest.raises(ValueError, match="2D"):
         _core.evaluate_potential(kernel, points, points, points, 0.5)
     with pytest.raises(ValueError, match="kind"):
-        _core.RadialKernel("harmonic", 2, [1.0], [1.0])
+        _core.Kernel("harmonic", 2, [1.0], [1.0])
     with pytest.raises(ValueError, match="dimension"):
-        _core.RadialKernel(CURL_FREE, 1, [1.0], [1.0])
+        _core.Kernel(CURL_FREE, 1, [1.0], [1.0])
     with pytest.raises(ValueError, match="start"):
         _core.farthest_point_ordering(points, 10, 0.0)
 

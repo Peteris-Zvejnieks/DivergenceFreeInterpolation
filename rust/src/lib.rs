@@ -4,6 +4,7 @@
 //! condition logic; this crate does the heavy, embarrassingly parallel parts:
 //!
 //! - [`kernel`]: the divergence-free and curl-free matrix kernels, evaluated on point pairs;
+//! - [`walls`]: the boundary-weighted divergence-free kernel for exact wall conditions;
 //! - [`tree`]: a kd-tree for radius queries in any dimension;
 //! - [`assembly`]: the sparse interpolation matrix, in parallel;
 //! - [`evaluate`]: interpolants and their scalar potentials at query points, in parallel;
@@ -24,6 +25,7 @@ pub mod kernel;
 pub mod sparse;
 pub mod thinning;
 pub mod tree;
+pub mod walls;
 
 #[cfg(feature = "python")]
 mod pool;

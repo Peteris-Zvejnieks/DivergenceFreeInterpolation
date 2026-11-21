@@ -160,7 +160,8 @@ def test_gram_matrix_is_symmetric_positive_definite(kind, dim, nu, k, rng):
     gram = INTERPOLANTS[kind](0.7, nu=nu, k=k)._gram_matrix(points).toarray()
     assert gram.shape == (dim * len(points), dim * len(points))
     np.testing.assert_allclose(gram, gram.T, atol=1e-13)
-    np.linalg.cholesky(gram)  # raises LinAlgError if not positive definite
+    # raises LinAlgError if not positive definite
+    np.linalg.cholesky(gram)
 
 
 @pytest.mark.parametrize("kind", KINDS)

@@ -27,8 +27,10 @@ def test_radial_parts_are_polynomials_with_h_zero_at_origin(k):
     a, h = radial_coefficients(k + 2, k)
     # Exact rationals (fractions.Fraction from the shipped table)
     assert all(isinstance(c, numbers.Rational) for c in a + h)
-    assert h[0] == 0  # H(0) = psi''(0) - lim psi'(r)/r = 0
-    assert a[0] < 0  # psi decreases from its maximum at the origin
+    # H(0) = psi''(0) - lim psi'(r)/r = 0
+    assert h[0] == 0
+    # psi decreases from its maximum at the origin
+    assert a[0] < 0
 
 
 @pytest.mark.parametrize("kind", KINDS)

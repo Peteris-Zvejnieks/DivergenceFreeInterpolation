@@ -51,9 +51,10 @@ def cluster_preconditioner(kernel, points, support_radius, tree):
         # Point indices of each cluster of this size: (clusters, size)
         members = order[starts[groups][:, None] + np.arange(size)]
         located = points[members]
-        differences = located[:, :, None, :] - located[:, None, :, :]
         # (clusters, size, size, d, d) -> (clusters, size * d, size * d)
-        blocks = kernel.blocks(differences, support_radius)
+        blocks = kernel.pair_blocks(
+            located[:, :, None, :], located[:, None, :, :], support_radius
+        )
         blocks = blocks.transpose(0, 1, 3, 2, 4).reshape(
             len(groups), size * d, size * d
         )

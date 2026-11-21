@@ -15,21 +15,87 @@ use crate::kernel::{Kind, PairKernel, RadialKernel};
 use crate::pool;
 use crate::sparse::CsrMatrix;
 use crate::thinning;
+use crate::walls::{Shape, Wall, WallKernel};
 
-/// A divergence-free or curl-free kernel from the ascending coefficients of A(r) and H(r).
-#[pyclass(
-    name = "RadialKernel",
-    module = "divergence_free_interpolant._core",
-    frozen
-)]
-struct PyRadialKernel {
-    inner: RadialKernel,
+/// The kernels the bindings dispatch over (statically, so each gets its own optimised loops).
+enum AnyKernel {
+    Radial(RadialKernel),
+    Walled(WallKernel),
+}
+
+/// Runs `$body` with `$k` bound to the concrete kernel.
+macro_rules! with_kernel {
+    ($kernel:expr, |$k:ident| $body:expr) => {
+        match $kernel {
+            AnyKernel::Radial($k) => $body,
+            AnyKernel::Walled($k) => $body,
+        }
+    };
+}
+
+impl AnyKernel {
+    fn dim(&self) -> usize {
+        with_kernel!(self, |k| k.dim())
+    }
+
+    fn is_divergence_free(&self) -> bool {
+        match self {
+            AnyKernel::Radial(k) => k.kind() == Kind::DivergenceFree,
+            AnyKernel::Walled(_) => true,
+        }
+    }
+}
+
+/// A wall from Python: (shape, point, vector, radius, inside, band, power), where shape is
+/// "ball" (point: centre), "half_space" (vector: unit normal) or "cylinder" (vector: unit axis).
+type WallSpec = (String, Vec<f64>, Vec<f64>, f64, bool, f64, u32);
+
+fn wall(spec: WallSpec) -> PyResult<Wall> {
+    let (shape, point, vector, radius, inside, band, power) = spec;
+    let shape = match shape.as_str() {
+        "ball" => Shape::Ball {
+            center: point,
+            radius,
+            inside,
+        },
+        "half_space" => Shape::HalfSpace {
+            point,
+            normal: vector,
+        },
+        "cylinder" => Shape::Cylinder {
+            point,
+            axis: vector,
+            radius,
+            inside,
+        },
+        other => {
+            return Err(PyValueError::new_err(format!(
+                "unknown wall shape {other:?}"
+            )));
+        }
+    };
+    Ok(Wall { shape, band, power })
+}
+
+/// A divergence-free or curl-free kernel from the ascending coefficients of A(r) and H(r); with
+/// `walls`, the boundary-weighted divergence-free kernel, which also needs those of psi(r).
+#[pyclass(name = "Kernel", module = "divergence_free_interpolant._core", frozen)]
+struct PyKernel {
+    inner: AnyKernel,
 }
 
 #[pymethods]
-impl PyRadialKernel {
+impl PyKernel {
     #[new]
-    fn new(kind: &str, dim: usize, a: Vec<f64>, h: Vec<f64>) -> PyResult<Self> {
+    #[pyo3(signature = (kind, dim, a, h, psi=None, walls=None))]
+    fn new(
+        kind: &str,
+        dim: usize,
+        a: Vec<f64>,
+        h: Vec<f64>,
+        psi: Option<Vec<f64>>,
+        walls: Option<Vec<WallSpec>>,
+    ) -> PyResult<Self> {
         let kind = match kind {
             "divergence_free" => Kind::DivergenceFree,
             "curl_free" => Kind::CurlFree,
@@ -39,9 +105,26 @@ impl PyRadialKernel {
                 )));
             }
         };
-        RadialKernel::new(kind, dim, a, h)
-            .map(|inner| Self { inner })
-            .map_err(PyValueError::new_err)
+        let inner = match walls {
+            None => AnyKernel::Radial(
+                RadialKernel::new(kind, dim, a, h).map_err(PyValueError::new_err)?,
+            ),
+            Some(walls) => {
+                if kind != Kind::DivergenceFree {
+                    return Err(PyValueError::new_err(
+                        "walls are only supported for divergence-free kernels",
+                    ));
+                }
+                let psi = psi.ok_or_else(|| {
+                    PyValueError::new_err("a kernel with walls needs the coefficients of psi")
+                })?;
+                let walls = walls.into_iter().map(wall).collect::<PyResult<_>>()?;
+                AnyKernel::Walled(
+                    WallKernel::new(dim, psi, a, h, walls).map_err(PyValueError::new_err)?,
+                )
+            }
+        };
+        Ok(Self { inner })
     }
 
     #[getter]
@@ -73,13 +156,15 @@ type CsrArrays<'py> = (
 #[pyfunction]
 fn gram_matrix<'py>(
     py: Python<'py>,
-    kernel: &Bound<'py, PyRadialKernel>,
+    kernel: &Bound<'py, PyKernel>,
     points: PyReadonlyArray2<'py, f64>,
     support_radius: f64,
 ) -> PyResult<CsrArrays<'py>> {
     let kernel = &kernel.get().inner;
     let points = rows(&points, kernel.dim(), "points")?;
-    let csr = py.detach(|| pool::install(|| assembly::gram_matrix(kernel, points, support_radius)));
+    let csr = py.detach(|| {
+        pool::install(|| with_kernel!(kernel, |k| assembly::gram_matrix(k, points, support_radius)))
+    });
     Ok((
         PyArray1::from_vec(py, csr.indptr),
         PyArray1::from_vec(py, csr.indices),
@@ -89,7 +174,7 @@ fn gram_matrix<'py>(
 
 /// Shared argument checks for the evaluation functions.
 fn evaluation_inputs<'a>(
-    kernel: &RadialKernel,
+    kernel: &AnyKernel,
     nodes: &'a PyReadonlyArray2<'_, f64>,
     coefficients: &'a PyReadonlyArray2<'_, f64>,
     queries: &'a PyReadonlyArray2<'_, f64>,
@@ -109,7 +194,7 @@ fn evaluation_inputs<'a>(
 #[pyfunction]
 fn evaluate<'py>(
     py: Python<'py>,
-    kernel: &Bound<'py, PyRadialKernel>,
+    kernel: &Bound<'py, PyKernel>,
     nodes: PyReadonlyArray2<'py, f64>,
     coefficients: PyReadonlyArray2<'py, f64>,
     queries: PyReadonlyArray2<'py, f64>,
@@ -119,7 +204,15 @@ fn evaluate<'py>(
     let (nodes, coefficients, queries) =
         evaluation_inputs(kernel, &nodes, &coefficients, &queries)?;
     let values = py.detach(|| {
-        pool::install(|| evaluation::evaluate(kernel, nodes, coefficients, queries, support_radius))
+        pool::install(|| {
+            with_kernel!(kernel, |k| evaluation::evaluate(
+                k,
+                nodes,
+                coefficients,
+                queries,
+                support_radius
+            ))
+        })
     });
     Ok(PyArray1::from_vec(py, values))
 }
@@ -128,14 +221,14 @@ fn evaluate<'py>(
 #[pyfunction]
 fn evaluate_potential<'py>(
     py: Python<'py>,
-    kernel: &Bound<'py, PyRadialKernel>,
+    kernel: &Bound<'py, PyKernel>,
     nodes: PyReadonlyArray2<'py, f64>,
     coefficients: PyReadonlyArray2<'py, f64>,
     queries: PyReadonlyArray2<'py, f64>,
     support_radius: f64,
 ) -> PyResult<Bound<'py, PyArray1<f64>>> {
     let kernel = &kernel.get().inner;
-    if kernel.kind() == Kind::DivergenceFree && kernel.dim() != 2 {
+    if kernel.is_divergence_free() && kernel.dim() != 2 {
         return Err(PyValueError::new_err(
             "a scalar stream function only exists in 2D",
         ));
@@ -144,7 +237,13 @@ fn evaluate_potential<'py>(
         evaluation_inputs(kernel, &nodes, &coefficients, &queries)?;
     let values = py.detach(|| {
         pool::install(|| {
-            evaluation::evaluate_potential(kernel, nodes, coefficients, queries, support_radius)
+            with_kernel!(kernel, |k| evaluation::evaluate_potential(
+                k,
+                nodes,
+                coefficients,
+                queries,
+                support_radius
+            ))
         })
     });
     Ok(PyArray1::from_vec(py, values))
@@ -282,7 +381,7 @@ fn cholesky_solve<'py>(
 
 #[pymodule]
 fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
-    module.add_class::<PyRadialKernel>()?;
+    module.add_class::<PyKernel>()?;
     module.add_function(wrap_pyfunction!(gram_matrix, module)?)?;
     module.add_function(wrap_pyfunction!(evaluate, module)?)?;
     module.add_function(wrap_pyfunction!(evaluate_potential, module)?)?;

@@ -11,6 +11,10 @@ The two kernels of Fuselier (2008) are then
 
 For Wendland functions with k >= 1, A and H are polynomials in r and H(0) = 0, so the kernels
 are evaluated in any dimension without a special case at r = 0 (where xhat is set to 0).
+
+With walls (see the walls module) the divergence-free kernel is weighted by a wall function g:
+K(x, y) = tr(M) I - M^T with M = grad_x grad_y^T [delta^(2-d) g(x) g(y) psi(|x - y| / delta)],
+which is no longer a function of x - y alone (docs/tier2_boundary_conditions.md).
 """
 
 import numbers
@@ -21,6 +25,7 @@ from numpy.polynomial import polynomial
 
 from . import _core
 from ._wendland import minimal_nu, wendland_coefficients
+from .walls import wall_function
 
 DIVERGENCE_FREE = "divergence_free"
 CURL_FREE = "curl_free"
@@ -73,25 +78,45 @@ def radial_coefficients(nu: int, k: int):
 
 
 class MatrixKernel:
-    """Divergence-free or curl-free matrix kernel Phi_delta(x) = delta^-d Phi(x / delta)."""
+    """Divergence-free or curl-free matrix kernel Phi_delta(x) = delta^-d Phi(x / delta), or with
+    `walls` the boundary-weighted divergence-free kernel."""
 
-    def __init__(self, kind: str, dim: int, nu: int | None, k: int):
+    def __init__(self, kind: str, dim: int, nu: int | None, k: int, walls=()):
         if kind not in KINDS:
             raise ValueError(f"unknown kernel kind {kind!r}, expected one of {KINDS}")
         self.kind = kind
         self.dim = dim
         self.k = as_integer(k, "k")
         self.nu = resolve_parameters(self.k, nu, dim)
+        self.walls = tuple(walls)
+        if self.walls and kind != DIVERGENCE_FREE:
+            raise ValueError("walls are only supported for divergence-free kernels")
+        for wall in self.walls:
+            if wall.dim != dim:
+                raise ValueError(
+                    f"a {wall.dim}D wall cannot bound {dim}D data: {wall!r}"
+                )
         a, h = radial_coefficients(self.nu, self.k)
         self._a = np.array(a, dtype=float)
         self._h = np.array(h, dtype=float)
+        self._psi = np.array(wendland_coefficients(self.nu, self.k), dtype=float)
         # The same kernel in the Rust core, which assembles and evaluates with it
-        self.core = _core.RadialKernel(kind, dim, self._a.tolist(), self._h.tolist())
+        if self.walls:
+            self.core = _core.Kernel(
+                kind,
+                dim,
+                self._a.tolist(),
+                self._h.tolist(),
+                self._psi.tolist(),
+                [wall._core_spec() for wall in self.walls],
+            )
+        else:
+            self.core = _core.Kernel(kind, dim, self._a.tolist(), self._h.tolist())
 
     def __reduce__(self):
         # The Rust kernel cannot be pickled: rebuild everything from the parameters, so that
         # fitted interpolants can be saved and sent to worker processes
-        return (MatrixKernel, (self.kind, self.dim, self.nu, self.k))
+        return (MatrixKernel, (self.kind, self.dim, self.nu, self.k, self.walls))
 
     def _radial_parts(self, u):
         """A(r), H(r) and xhat for scaled differences u (..., d); zero outside the support."""
@@ -117,6 +142,64 @@ class MatrixKernel:
             out = -(a[..., np.newaxis, np.newaxis] * eye + h * outer)
         return support_radius ** (-self.dim) * out
 
+    def pair_blocks(self, x, y, support_radius: float):
+        """Kernel matrices K(x, y) for points x and y of shape (..., d), returned as (..., d, d).
+
+        Without walls these are blocks(x - y); block (y, x) is always the transpose of (x, y).
+        """
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        if not self.walls:
+            return self.blocks(x - y, support_radius)
+        delta = support_radius
+        u = (x - y) / delta
+        a, h, unit = self._radial_parts(u)
+        r = np.linalg.norm(u, axis=-1)
+        psi = np.where(r <= 1, polynomial.polyval(r, self._psi), 0.0)
+        gradient = a[..., np.newaxis] * u / delta
+        eye = np.eye(self.dim)
+        outer = unit[..., :, np.newaxis] * unit[..., np.newaxis, :]
+        hessian = (a[..., None, None] * eye + h[..., None, None] * outer) / delta**2
+        gx, dgx = wall_function(self.walls, x)
+        gy, dgy = wall_function(self.walls, y)
+        m = delta ** (2 - self.dim) * (
+            dgx[..., :, None] * dgy[..., None, :] * psi[..., None, None]
+            - gy[..., None, None] * dgx[..., :, None] * gradient[..., None, :]
+            + gx[..., None, None] * gradient[..., :, None] * dgy[..., None, :]
+            - (gx * gy)[..., None, None] * hessian
+        )
+        trace = np.trace(m, axis1=-2, axis2=-1)
+        return trace[..., None, None] * eye - np.swapaxes(m, -1, -2)
+
+    def pair_potential_terms(self, x, y, coefficients, support_radius: float):
+        """Per-pair terms of the scalar potential (see potential_terms) for points x and nodes y.
+
+        With walls (2D): c . perp(grad_y k), where k = delta^(2-d) g(x) g(y) psi(|x - y| / delta)
+        is the scalar kernel of the potential.
+        """
+        x = np.asarray(x, dtype=float)
+        y = np.asarray(y, dtype=float)
+        if not self.walls:
+            return self.potential_terms(x - y, coefficients, support_radius)
+        if self.dim != 2:
+            raise ValueError("a scalar stream function only exists in 2D")
+        delta = support_radius
+        u = (x - y) / delta
+        a, _, _ = self._radial_parts(u)
+        r = np.linalg.norm(u, axis=-1)
+        psi = np.where(r <= 1, polynomial.polyval(r, self._psi), 0.0)
+        gx, _ = wall_function(self.walls, x)
+        gy, dgy = wall_function(self.walls, y)
+
+        def perp_dot(v):
+            return v[..., 1] * coefficients[..., 0] - v[..., 0] * coefficients[..., 1]
+
+        return (
+            delta ** (2 - self.dim)
+            * gx
+            * (psi * perp_dot(dgy) - gy * a / delta * perp_dot(u))
+        )
+
     def potential_terms(self, differences, coefficients, support_radius: float):
         """Per-pair terms of the scalar potential of sum_j Phi(x - x_j) c_j.
 
@@ -137,5 +220,5 @@ class MatrixKernel:
 
 
 @lru_cache
-def get_kernel(kind: str, dim: int, nu: int | None, k: int) -> MatrixKernel:
-    return MatrixKernel(kind, dim, nu, k)
+def get_kernel(kind: str, dim: int, nu: int | None, k: int, walls=()) -> MatrixKernel:
+    return MatrixKernel(kind, dim, nu, k, tuple(walls))

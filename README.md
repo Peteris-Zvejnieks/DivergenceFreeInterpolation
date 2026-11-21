@@ -45,7 +45,9 @@ level from coarse to fine (flow speed shown):
 ### Boundary conditions
 
 Flow past a cylinder from scattered measurements, none close to the wall. With a no-penetration
-condition on the cylinder, the streamlines go around it instead of through it:
+condition on the cylinder, the streamlines go around it instead of through it. As a boundary
+condition (`NormalComponent`), the wall is imposed in the mean over short segments; as a wall
+built into the kernel (`walls=`), exactly, everywhere along it:
 
 ![Boundary conditions 2D](https://raw.githubusercontent.com/Peteris-Zvejnieks/DivergenceFreeInterpolation/refactor/graphics/2D_boundary_conditions.png)
 
@@ -117,7 +119,7 @@ interp(grid)
 
 ## API
 
-### `DivergenceFreeInterpolant(support_radius, *, k=3, nu=None, solver='auto', tol=1e-10)`
+### `DivergenceFreeInterpolant(support_radius, *, k=3, nu=None, solver='auto', tol=1e-10, walls=())`
 ### `CurlFreeInterpolant(support_radius, *, k=3, nu=None, solver='auto', tol=1e-10)`
 
 - **`support_radius`** (required): radius of the compactly supported kernel. Each sample only
@@ -137,6 +139,7 @@ interp(grid)
   - `'auto'`: uses `'direct'` in 2D (up to 250k unknowns) and for 3D systems up to 15k
     unknowns (5000 points), `'cg'` otherwise. If CG fails, for example on nearly coincident
     points, systems up to 50k unknowns are retried with `'direct'`.
+- **`walls`** (divergence-free only): walls the field satisfies exactly; see [Walls](#walls).
 
 ### Methods
 
@@ -156,8 +159,8 @@ farther than `support_radius` from all samples and boundary conditions.
 
 ### Multilevel interpolation
 
-### `MultilevelDivergenceFreeInterpolant(*, support_factor=6.0, refinement=0.5, k=3, nu=None, solver='auto', tol=1e-10)`
-### `MultilevelCurlFreeInterpolant(...)` (same parameters)
+### `MultilevelDivergenceFreeInterpolant(*, support_factor=6.0, refinement=0.5, k=3, nu=None, solver='auto', tol=1e-10, walls=())`
+### `MultilevelCurlFreeInterpolant(...)` (same parameters, without `walls`)
 
 A single support radius has to compromise. Small supports are cheap, but they cannot bridge the
 gaps between samples, so accuracy stays poor, and larger data sets with proportionally smaller
@@ -246,6 +249,51 @@ interp = dfi.DivergenceFreeInterpolant(1.0).fit(
   curve, coinciding or collapsing edges of a surface), or set with `closed=`. A closed wall must
   be a single `Curve` or `Surface`: one split into several open pieces is not recognised as
   closed, so neither the check nor the dropped constraint applies to it.
+
+### Walls
+
+For walls of simple shape, divergence-free interpolants can satisfy no penetration (u·n = 0) or
+no slip (u = 0) **exactly, at every point of the wall**, instead of in the mean over segments.
+The wall is built into the kernel rather than added to the system, so it costs no unknowns:
+
+```python
+from divergence_free_interpolant import walls
+
+interp = dfi.DivergenceFreeInterpolant(
+    1.0, walls=[walls.Circle((0, 0), 0.3, band=0.5)]
+).fit(points, values)
+```
+
+- **Shapes** (module `divergence_free_interpolant.walls`):
+  - `Circle(center, radius)` (2D) and `Sphere(center, radius)` (3D): an obstacle, or with
+    `inside=True` a container.
+  - `Line(point, normal)` (2D) and `Plane(point, normal)` (3D): the flow is on the side the
+    normal points to.
+  - `Cylinder(point, axis, radius)` (3D): an infinite cylinder, or with `inside=True` a pipe.
+
+  Several walls can be combined, e.g. a channel with an obstacle. Every wall takes `band` and
+  `condition`.
+- **`condition`**: `'no_penetration'` (the default) makes the field tangent to the wall;
+  `'no_slip'` makes it vanish there.
+- **`band`** (required): the width of the layer along the wall in which the kernel changes,
+  i.e. how far the wall's influence reaches into the flow. Away from all walls the interpolant
+  is the usual one. A band of a few point spacings up to the obstacle's size works well (for a
+  container it must be smaller than the radius); there is no automatic choice yet.
+- **How it works:** the field is the curl of a vector potential, and the potential is
+  multiplied by a smooth function g that vanishes on the walls. On a wall that leaves only
+  components tangent to it, or none at all with g² (no slip). The field is still exactly
+  divergence-free; see [docs/tier2_boundary_conditions.md](docs/tier2_boundary_conditions.md).
+- **Data on a wall** (closer than 0.001 × band) keeps only the components the wall leaves free:
+  its tangential velocity for no penetration, nothing for no slip. Data on the far side of a
+  wall (inside an obstacle) raises a `ValueError`. The interpolant has no meaning there.
+- **Stream function:** in 2D, the wall is a streamline: the stream function is zero along it.
+- Walls work with the multilevel interpolants (shared by all levels) and alongside
+  `conditions` on other boundaries.
+
+In the cylinder example, the exact wall gives the smallest error (RMS 0.081 outside the
+cylinder, against 0.097 with `NormalComponent` and 0.14 without a wall). Evaluation costs about
+twice as much as without walls; fitting is barely slower. General curved boundaries (`Curve`,
+`Surface`) still need `conditions`, and curl-free fields have no walls yet.
 
 ### Performance
 
@@ -341,6 +389,11 @@ dimension. Their exact coefficients are derived with sympy: for the usual parame
 time (the table in `_wendland_table.py`, written by `tools/gen_kernels.py`), for others when
 first needed.
 
+With walls, the divergence-free kernel is K(x, y) = tr(M)·I − Mᵀ with
+M = ∇ₓ∇ᵧᵀ[g(x) g(y) ψ(|x − y|)], for a wall function g that vanishes on the walls. It is no
+longer a function of x − y alone, but its columns are still divergence-free, and on a wall they
+are tangent to it.
+
 ## Development
 
 The project is managed with [uv](https://docs.astral.sh/uv/), and needs a Rust toolchain
@@ -365,9 +418,27 @@ The numpy implementations of assembly, evaluation, thinning and conjugate gradie
 reference the Rust core is tested against. Run with `DFI_BACKEND=numpy` to use them, e.g.
 `DFI_BACKEND=numpy uv run pytest`.
 
-`benchmarks/` holds timing scripts. `research/` holds exploratory spikes, such as
-`research/boundary_weighted_kernel.py`, which tests imposing wall conditions exactly through a
-boundary-weighted kernel; its findings are in the script's docstring.
+`benchmarks/` holds timing scripts. `benchmarks/track.py` runs a fixed suite in about a
+minute and compares it with the last run on the same machine, recorded in
+`benchmarks/history.jsonl`; record a run when committing performance-relevant changes.
+`research/` holds exploratory spikes, such as
+`research/boundary_weighted_kernel.py`, the prototype of the walls; its findings are in
+[docs/tier2_boundary_conditions.md](docs/tier2_boundary_conditions.md).
+
+### Releasing
+
+`.github/workflows/release.yml` builds one abi3 wheel per platform (Linux x86_64 and aarch64,
+macOS arm64 and x86_64, Windows x64), each for every Python ≥ 3.10, plus the sdist, and runs the
+tests against every wheel it can run. Pushing a tag `vX.Y.Z` that matches the version in
+`pyproject.toml` also publishes to PyPI. It uses trusted publishing, so no token is stored. Set
+it up once on PyPI:
+
+1. In the project's settings, add a trusted publisher for GitHub Actions: this repository,
+   workflow `release.yml`, environment `pypi`.
+2. In the GitHub repository settings, create the environment `pypi` (optionally with required
+   reviewers).
+
+Running the workflow by hand builds and tests the wheels without publishing.
 
 ## References
 

@@ -1,9 +1,12 @@
-"""Flow past a cylinder: imposing a no-penetration wall as a boundary condition.
+"""Flow past a cylinder: imposing a no-penetration wall, as a boundary condition or exactly.
 
 Velocity measurements of a uniform flow past a cylinder are scattered around the obstacle, but
 none close to it. The interpolant alone knows nothing about the wall, so its streamlines cut
-straight through the cylinder. Adding NormalComponent(circle) (zero normal velocity on the wall, in the mean over
-short segments) makes the flow go around it, and improves the reconstruction near the wall.
+straight through the cylinder. Two ways to make the flow go around it:
+
+- NormalComponent(circle): zero normal velocity on the wall, in the mean over short segments;
+- walls=walls.Circle(...): the wall built into the kernel, so the flow is tangent to it exactly,
+  everywhere along it. Here it is also the most accurate near the wall.
 """
 
 import matplotlib.pyplot as plt
@@ -44,6 +47,9 @@ free = dfi.DivergenceFreeInterpolant(support_radius=1.5).fit(samples, measured)
 walled = dfi.DivergenceFreeInterpolant(support_radius=1.5).fit(
     samples, measured, conditions=dfi.NormalComponent(wall)
 )
+exact = dfi.DivergenceFreeInterpolant(
+    support_radius=1.5, walls=dfi.walls.Circle((0, 0), RADIUS, band=0.5)
+).fit(samples, measured)
 
 ## How much flow crosses the wall, and the error outside the cylinder
 angles = np.linspace(0, 2 * np.pi, 720, endpoint=False)
@@ -52,16 +58,20 @@ on_wall = RADIUS * normals
 XX, YY = np.mgrid[-1.5:1.5:300j, -1.0:1.0:200j]
 grid = np.stack([XX, YY], axis=-1)
 outside = np.linalg.norm(grid, axis=-1) > RADIUS
-for name, model in [("no wall condition", free), ("no-penetration wall", walled)]:
+for name, model in [
+    ("no wall condition", free),
+    ("NormalComponent", walled),
+    ("walls.Circle", exact),
+]:
     flux = np.abs(np.sum(model(on_wall) * normals, axis=1)).max()
     error = np.linalg.norm(model(grid) - velocity(grid), axis=-1)[outside]
     print(
         f"{name:>20}: max |u.n| on the wall {flux:.1e}, RMS error outside {np.sqrt(np.mean(error**2)):.2e}"
     )
 
-## Plot: measurements | without the wall | with the wall | true flow
+## Plot: measurements | without the wall | with each kind of wall | true flow
 fig, axes = plt.subplots(
-    1, 4, figsize=(20, 4.6), sharex=True, sharey=True, layout="constrained"
+    1, 5, figsize=(24, 4.4), sharex=True, sharey=True, layout="constrained"
 )
 speed = np.linalg.norm(measured, axis=1)
 axes[0].quiver(*samples.T, *(measured / speed[:, None]).T, speed, cmap="viridis")
@@ -70,14 +80,15 @@ axes[0].set_title(f"Velocity measurements ({len(samples)} points)")
 panels = [
     (axes[1], free.stream_function(grid), free(grid), "Without the wall condition"),
     (axes[2], walled.stream_function(grid), walled(grid), "With NormalComponent(wall)"),
-    (axes[3], stream_function(grid), velocity(grid), "True flow"),
+    (axes[3], exact.stream_function(grid), exact(grid), "With walls.Circle (exact)"),
+    (axes[4], stream_function(grid), velocity(grid), "True flow"),
 ]
 # The true stream function is singular inside the cylinder: scale the colours by the outside
 limit = np.abs(stream_function(grid)[outside]).max()
 levels = np.linspace(-limit, limit, 21)
 for ax, psi, field, title in panels:
     # The stream functions are defined up to a constant: align them outside the cylinder
-    if ax is not axes[3]:
+    if ax is not axes[4]:
         psi = psi + np.mean((stream_function(grid) - psi)[outside])
     filled = ax.contourf(XX, YY, psi, levels=levels, cmap="RdBu_r", extend="both")
     ax.streamplot(
@@ -91,8 +102,9 @@ for ax, psi, field, title in panels:
         arrowsize=0.7,
     )
     ax.set_title(title)
-# The analytic potential flow is not physical inside the cylinder, so cover it there
-axes[3].add_patch(plt.Circle((0, 0), RADIUS, color="lightgrey", zorder=3))
+# The analytic flow and the exact wall's field have no meaning inside the cylinder: cover it
+for ax in axes[3:]:
+    ax.add_patch(plt.Circle((0, 0), RADIUS, color="lightgrey", zorder=3))
 for ax in axes:
     ax.add_patch(
         plt.Circle((0, 0), RADIUS, fill=False, color="gold", linewidth=2.5, zorder=4)

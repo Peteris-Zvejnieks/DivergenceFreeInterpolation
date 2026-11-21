@@ -19,10 +19,12 @@ from ._interpolant import (
     DivergenceFreeInterpolant,
     _as_data,
     as_conditions,
+    check_duplicates,
 )
 from ._kernel import DIVERGENCE_FREE, as_integer, get_kernel
 from ._solvers import SOLVERS, SolveInfo, validate_tolerance
 from ._thinning import farthest_point_ordering
+from .walls import NothingToFit, as_walls, check_data, restrict_functionals
 
 # Under solver='auto', intermediate (quasi-uniform) levels larger than this many unknowns use CG,
 # which converges in a bounded number of iterations on well-spaced points
@@ -113,6 +115,7 @@ class _MultilevelInterpolant:
         self.nu = nu
         self.solver = solver
         self.tol = tol
+        self.walls = ()
         self._fitted = None
         self._spacings = None
         self._counts = None
@@ -145,18 +148,15 @@ class _MultilevelInterpolant:
         if len(points) < 2:
             raise ValueError("multilevel interpolation needs at least 2 points")
         conditions = as_conditions(conditions, points.shape[1])
-        # Reject unsupported dimensions and parameters before the (costly) hierarchy is built
-        get_kernel(self._single_level._kind, points.shape[1], self.nu, self.k)
+        # Reject unsupported dimensions, parameters and walls before the (costly) hierarchy is
+        # built; every level shares the walls
+        walls = as_walls(self.walls)
+        get_kernel(self._single_level._kind, points.shape[1], self.nu, self.k, walls)
         if self.solver != "lstsq":
-            duplicates = cKDTree(points).query_pairs(0.0, output_type="ndarray")
-            if len(duplicates):
-                i, j = duplicates[0]
-                raise ValueError(
-                    f"points {i} and {j} coincide, which makes the system singular; "
-                    f"merge duplicate points or use solver='lstsq'"
-                )
+            check_duplicates(points)
+        check_data(walls, points)
         residual = values.copy()
-        fitted = []
+        fitted, spacings, counts = [], [], []
         hierarchy = level_hierarchy(points, self.support_factor, self.refinement)
         for number, (nodes, spacing) in enumerate(hierarchy, start=1):
             solver = self.solver
@@ -175,6 +175,7 @@ class _MultilevelInterpolant:
                 solver=solver,
                 tol=self.tol,
             )
+            level.walls = walls
             # The data was validated as a whole; a coarse level may legitimately have fewer
             # points than dimensions, which the public fit() would reject as transposed input
             if conditions:
@@ -194,19 +195,28 @@ class _MultilevelInterpolant:
                 self._subtract_coarser_levels(
                     fitted, atoms, weights, targets, len(nodes)
                 )
-                level._fit_functionals(
-                    atoms, weights, targets, identity_points=len(nodes)
-                )
             else:
-                level._fit_functionals(points[nodes], None, residual[nodes].ravel())
+                atoms, weights, targets = points[nodes], None, residual[nodes].ravel()
+            try:
+                restricted = restrict_functionals(
+                    walls, atoms, weights, targets, len(nodes)
+                )
+            except NothingToFit:
+                # A coarse level whose points all lie on no-slip walls has nothing to add
+                if last:
+                    raise
+                continue
+            level._fit_functionals(*restricted)
             fitted.append(level)
+            spacings.append(spacing)
+            counts.append(len(nodes))
             if not last:
                 # Update the residual everywhere, including this level's own nodes, so that
                 # inexact (e.g. CG) solves are corrected by the finer levels, not ignored
                 residual -= level(points)
         self._fitted = fitted
-        self._spacings = tuple(spacing for _, spacing in hierarchy)
-        self._counts = tuple(len(nodes) for nodes, _ in hierarchy)
+        self._spacings = tuple(spacings)
+        self._counts = tuple(counts)
         return self
 
     @staticmethod
@@ -266,11 +276,32 @@ class MultilevelDivergenceFreeInterpolant(_MultilevelInterpolant):
         the number of neighbours per point grows like support_factor^dim.
     refinement : float, default 0.5
         Ratio between the spacings of consecutive levels.
-    k, nu, solver, tol
+    k, nu, solver, tol, walls
         As for DivergenceFreeInterpolant, applied to every level.
     """
 
     _single_level = DivergenceFreeInterpolant
+
+    def __init__(
+        self,
+        *,
+        support_factor: float = 6.0,
+        refinement: float = 0.5,
+        k: int = 3,
+        nu: int | None = None,
+        solver: str = "auto",
+        tol: float = 1e-10,
+        walls=(),
+    ):
+        super().__init__(
+            support_factor=support_factor,
+            refinement=refinement,
+            k=k,
+            nu=nu,
+            solver=solver,
+            tol=tol,
+        )
+        self.walls = as_walls(walls)
 
     def stream_function(self, points, *, levels: int | None = None):
         """2D only: stream function psi with interpolant (d psi/dy, -d psi/dx); shape (...,).

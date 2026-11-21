@@ -1,15 +1,17 @@
 # Exact wall conditions through a boundary-weighted kernel ("tier 2")
 
-**Status: research spike, not part of the package.** The experiments live in
+**Status: implemented for analytic walls** (`walls=` with the shapes in
+`divergence_free_interpolant.walls`; see the README). This document records the derivation and
+the research spike that led to it, in
 [`research/boundary_weighted_kernel.py`](../research/boundary_weighted_kernel.py)
 (`uv run python research/boundary_weighted_kernel.py` reproduces every number below).
 
-**Recommendation:**
-- Keep tier 1 (`NormalComponent`, `VectorValue`) as the supported way to impose boundary
-  conditions.
-- Build the Rust core (phase 6) so that kernels are evaluated on point pairs, not only on
-  differences. A weighted kernel can then be added later without a rewrite.
-- Offer tier 2 as an opt-in for analytic wall shapes in phase 7.
+**What exists:**
+- Tier 1 (`NormalComponent`, `VectorValue`) remains the way to impose conditions on general
+  parametric curves and surfaces, and the only one for curl-free fields.
+- Tier 2 covers circles, spheres, lines, planes and infinite cylinders, with no-penetration or
+  no-slip conditions, in single-level and multilevel interpolants, on both backends (the Rust
+  kernel in `rust/src/walls.rs`, the numpy reference in `_kernel.py` and `walls.py`).
 
 ## Why a second approach
 
@@ -36,8 +38,8 @@ $$
 (times the identity), where $\psi$ is the Wendland function. The resulting matrix kernel is
 
 $$
-K(x, y) = \operatorname{curl}_x \operatorname{curl}_y^{T} \big[k(x, y)\, I\big]
-        = \operatorname{tr}(M)\, I - M^{T},
+K(x, y) = \mathrm{curl}_x \mathrm{curl}_y^{T} \big[k(x, y)\, I\big]
+        = \mathrm{tr}(M)\, I - M^{T},
 \qquad M = \nabla_x \nabla_y^{T}\, k(x, y).
 $$
 
@@ -63,7 +65,7 @@ $$
   so $u \cdot n = 0$ **at every point of the wall**.
 - **Exact no-slip with $g^2$.** Using $g^2$ instead of $g$ gives
   $u = 2g\, \nabla g \times F + g^2\, \nabla \times F = 0$ on the wall.
-- **Positive semi-definite.** $K = L_x L_y^{T} k$ with $L = \operatorname{curl}$ and $k$
+- **Positive semi-definite.** $K = L_x L_y^{T} k$ with $L = \mathrm{curl}$ and $k$
   positive definite wherever $g \neq 0$. The interpolation matrices were positive definite in
   every test, in 2D and 3D, but this is not proven.
 - **Cheap ingredients.** It needs only $g$ and $\nabla g$ at both points, plus $\psi$,
@@ -72,7 +74,7 @@ $$
 
 ## Wall functions
 
-The spike uses $g(x) = q\big(\operatorname{dist}(x)/\ell\big)$, where $\operatorname{dist}$ is the signed distance to the wall (positive in the flow), and
+The spike uses $g(x) = q\big(\mathrm{dist}(x)/\ell\big)$, where $\mathrm{dist}$ is the signed distance to the wall (positive in the flow), and
 
 $$
 q(s) = \begin{cases} 1 - (1 - s)^3 & s < 1 \\ 1 & s \geq 1 \end{cases}
@@ -144,6 +146,9 @@ $\ell = 0.5$. "Plain" is the interpolant without any wall condition.
 
 ## Known issues
 
+The implementation handles issues 1, 4 and 5 (see [Implementation](#implementation)); 2 and 3
+remain open.
+
 1. **Data on or near the wall.** At a wall point $x_0$, $n \cdot K(x_0, y) = 0$ for every $y$:
    the normal component is zero by construction. A sample exactly on the wall therefore has an
    all-zero row for its normal component, which makes the matrix singular, and samples very
@@ -164,36 +169,29 @@ $\ell = 0.5$. "Plain" is the interpolant without any wall condition.
    $x - y$. Today, assembly, evaluation, the cluster preconditioner and the potentials all
    assume the difference form.
 
-## Implementation plan (proposal)
+## Implementation
 
-1. **Phase 6 (Rust core): kernels on point pairs.** The Rust core evaluates kernels through an
-   interface on point pairs $(x_i, x_j)$. The translation-invariant kernels compute the
-   difference internally. A weighted kernel then becomes one more implementation of the same
-   interface, covering assembly, evaluation, preconditioner blocks and potentials.
-2. **Phase 7: analytic walls as an opt-in.**
-   - Wall functions for circles, spheres, planes and infinite cylinders, with a `band` and a
-     `condition` (no-penetration or no-slip), combined by product for several walls.
-   - Single-level first; then multilevel, with $g$ shared by every level.
-   - Samples within a small distance of a wall rejected (or their normal functional dropped),
-     with a clear message.
+1. **Kernels on point pairs (phase 6).** The Rust core evaluates kernels through an interface
+   on point pairs $(x_i, x_j)$, so the weighted kernel is one more implementation of it,
+   covering assembly, evaluation, the preconditioner blocks and the 2D stream function
+   $\psi(x) = \sum_j c_j \cdot \nabla^{\perp}_y k(x, x_j)$. The kernel is scaled by
+   $\delta^{2-d}$ so that it equals the package's kernel for $g = 1$.
+2. **Analytic walls (phase 7).**
+   - Wall functions for circles, spheres, lines, planes and infinite cylinders (also with the
+     flow inside), with a `band` and a `condition`, combined by product for several walls.
+   - Single-level and multilevel, with $g$ shared by every level.
+   - Known issue 1 is handled by dropping functionals: a data point within $10^{-3}$ band of a
+     wall keeps only the components orthogonal to the normals of the walls it touches (none
+     for no slip, or at a corner of two walls in 2D). Data behind a wall is an error, and so is
+     a tier-1 condition on a wall.
+   - Tested: reduction to the plain kernel, symmetry, divergence-free columns, the wall
+     function's gradient, $u \cdot n = 0$ (and $u = 0$ for no slip) on every shape to
+     round-off, the stream function, Rust against numpy, CG against the direct solver, and
+     the cylinder problem's near-wall accuracy.
 3. **Later, if needed:**
    - general parametric boundaries, through closest-point distances within the reach and
      smooth combinations;
    - an automatic band;
-   - the curl-free equipotential variant.
-
-A possible interface, for illustration only (none of this exists yet):
-
-```python
-interp = dfi.DivergenceFreeInterpolant(
-    0.8, walls=[dfi.walls.Sphere(radius=0.3, band=0.5)]
-)
-interp.fit(points, values)
-```
-
-**Tests to carry over from the spike:**
-- reduction to the plain kernel for $g = 1$;
-- divergence-free output;
-- $u \cdot n$ at random wall points equal to zero to round-off, and $u = 0$ with $g^2$;
-- positive definiteness;
-- near-wall accuracy compared with tier 1 on the cylinder problem.
+   - the curl-free equipotential variant;
+   - computing $g$ once per point instead of once per pair, which would halve the cost of
+     evaluation with walls.
