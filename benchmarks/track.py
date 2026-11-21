@@ -6,7 +6,7 @@ runs the suite, compares it with the last run and records it; with --no-record i
 compares.
 
 Each case is timed as the best of `--repeat` runs. Every record holds the commit (marked dirty
-for uncommitted changes), the date, the package version and the machine; runs are compared with
+for uncommitted changes to the package or the Rust core), the date, the package version and the machine; runs are compared with
 the previous record from the same machine only, since timings from different machines do not
 compare. Commit the history together with performance-relevant changes.
 """
@@ -29,6 +29,8 @@ from divergence_free_interpolant import walls
 HISTORY = Path(__file__).with_name("history.jsonl")
 # Changes beyond this fraction are flagged
 NOTABLE = 0.15
+# Paths (relative to the repository root) whose uncommitted changes mark a record as dirty
+MEASURED = (":/src", ":/rust", ":/pyproject.toml")
 
 
 def support_for(n, dim, neighbours):
@@ -160,7 +162,8 @@ def main():
         print(line, flush=True)
 
     commit = git("rev-parse", "--short", "HEAD") or "unknown"
-    if git("status", "--porcelain", "--untracked-files=no"):
+    # Only changes to the measured code count, not to the history or the benchmarks
+    if git("status", "--porcelain", "--", *MEASURED):
         commit += "-dirty"
     record = {
         "date": datetime.datetime.now(datetime.timezone.utc).isoformat(
