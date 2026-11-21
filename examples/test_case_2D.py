@@ -3,7 +3,7 @@ import time
 import matplotlib.pyplot as plt
 import numpy as np
 
-import Divergence_Free_Interpolant as dfi
+import divergence_free_interpolant as dfi
 
 np.random.seed(69)
 div = lambda n, d: np.divide(n, d, out = np.zeros_like(d), where=d!=0)

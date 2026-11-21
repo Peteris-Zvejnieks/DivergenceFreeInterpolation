@@ -13,7 +13,7 @@ from pathlib import Path
 
 import numpy as np
 
-import Divergence_Free_Interpolant as dfi
+import divergence_free_interpolant as dfi
 
 OUT = Path(__file__).parent / "data" / "golden.npz"
 

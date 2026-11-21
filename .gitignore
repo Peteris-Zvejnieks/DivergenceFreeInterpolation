@@ -7,8 +7,8 @@
 __pycache__/
 .pytest_cache/
 .ruff_cache/
-Divergence_Free_Interpolant/RBF_kernels/
-Divergence_Free_Interpolant/build/
+src/divergence_free_interpolant/RBF_kernels/
+src/divergence_free_interpolant/build/
 misc/
 
 

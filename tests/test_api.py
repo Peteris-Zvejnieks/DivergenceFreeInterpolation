@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-import Divergence_Free_Interpolant as dfi
+import divergence_free_interpolant as dfi
 
 from conftest import conditioned
 

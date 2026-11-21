@@ -1,6 +1,6 @@
 from scipy.linalg import svd as _svd
 import numpy as _np
-from ._Radial_Basis_Functions import _RBF_kernel
+from ._kernel import _RBF_kernel
 
 _METHODS = ('SVD', 'penrose', 'linsolve', 'lstsq')
 

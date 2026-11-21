@@ -37,7 +37,7 @@ The project is managed with [uv](https://docs.astral.sh/uv/).
 #### Import
 ```python
   import numpy as np
-  import Divergence_Free_Interpolant as dfi
+  import divergence_free_interpolant as dfi
 ```
 
 #### Initialize

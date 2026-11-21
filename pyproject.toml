@@ -42,13 +42,12 @@ build-backend = "uv_build"
 default-groups = ["dev"]
 
 [tool.uv.build-backend]
-module-name = "Divergence_Free_Interpolant"
-module-root = ""
+module-name = "divergence_free_interpolant"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = ["error"]
 
 [tool.ruff.lint.isort]
-known-first-party = ["Divergence_Free_Interpolant"]
+known-first-party = ["divergence_free_interpolant"]
 known-local-folder = ["conftest"]

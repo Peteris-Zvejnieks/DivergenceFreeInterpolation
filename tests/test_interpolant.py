@@ -6,7 +6,7 @@ import numpy as np
 import pytest
 from scipy.stats import qmc
 
-import Divergence_Free_Interpolant as dfi
+import divergence_free_interpolant as dfi
 
 from conftest import VALID_PARAMS, conditioned, div_free_field
 

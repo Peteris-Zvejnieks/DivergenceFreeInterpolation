@@ -5,7 +5,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import Divergence_Free_Interpolant as dfi
+import divergence_free_interpolant as dfi
 
 GOLDEN = np.load(Path(__file__).parent / "data" / "golden.npz")
 CASES = sorted({key.split("/")[0] for key in GOLDEN.files})

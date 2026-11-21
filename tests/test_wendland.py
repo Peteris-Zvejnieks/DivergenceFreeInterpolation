@@ -3,7 +3,7 @@
 import pytest
 import sympy as sp
 
-from Divergence_Free_Interpolant._Radial_Basis_Functions import _RBF
+from divergence_free_interpolant._wendland import _RBF
 
 r = _RBF.r
 

@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import sympy as sp
 
-from Divergence_Free_Interpolant._Radial_Basis_Functions import _RBF_kernel
+from divergence_free_interpolant._kernel import _RBF_kernel
 
 from conftest import VALID_PARAMS
 

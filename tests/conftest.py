@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-import Divergence_Free_Interpolant as dfi
+import divergence_free_interpolant as dfi
 
 # Kernel parameters (nu, k) that are positive definite in both 2D and 3D (nu >= k + 2).
 VALID_PARAMS = [(3, 1), (4, 2), (5, 3)]
