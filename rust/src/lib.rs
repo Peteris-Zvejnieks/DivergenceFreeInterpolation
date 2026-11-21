@@ -8,7 +8,8 @@
 //! - [`assembly`]: the sparse interpolation matrix, in parallel;
 //! - [`evaluate`]: interpolants and their scalar potentials at query points, in parallel;
 //! - [`thinning`]: the greedy farthest-point ordering behind the multilevel levels;
-//! - [`sparse`] and [`cg`]: parallel CSR products and preconditioned conjugate gradients.
+//! - [`sparse`] and [`cg`]: parallel CSR products and preconditioned conjugate gradients;
+//! - [`cholesky`]: sparse Cholesky factorisation (faer) for the direct solves.
 //!
 //! Points are passed as flat row-major slices (`n * dim` values).
 
@@ -17,6 +18,7 @@
 
 pub mod assembly;
 pub mod cg;
+pub mod cholesky;
 pub mod evaluate;
 pub mod kernel;
 pub mod sparse;

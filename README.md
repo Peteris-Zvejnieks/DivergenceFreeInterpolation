@@ -253,7 +253,8 @@ The kernels have compact support, so fitting builds a sparse system via kd-tree 
 and evaluation only visits nearby samples. Assembly, evaluation, the farthest-point thinning
 and conjugate gradients run in parallel in a Rust core. Conjugate gradients uses a block-Jacobi
 preconditioner over clusters of unusually close points, which random data always has. Direct
-solves use scipy's sparse factorisation.
+solves of large 3D systems use a sparse Cholesky factorisation in the Rust core (faer), and
+scipy's SuperLU otherwise: in 2D its fill-reducing ordering is the better one.
 
 Timings on one desktop machine (12 cores), random points in the unit square/cube, `'auto'`
 solver. A single level with about 30 (2D) or 50 (3D) neighbours per point

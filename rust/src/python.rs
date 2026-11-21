@@ -4,11 +4,12 @@
 //! back as flat numpy arrays that Python reshapes. Heavy work runs without the GIL.
 
 use numpy::{PyArray1, PyReadonlyArray1, PyReadonlyArray2, PyUntypedArrayMethods};
-use pyo3::exceptions::PyValueError;
+use pyo3::exceptions::{PyMemoryError, PyValueError};
 use pyo3::prelude::*;
 
 use crate::assembly;
 use crate::cg;
+use crate::cholesky;
 use crate::evaluate as evaluation;
 use crate::kernel::{Kind, PairKernel, RadialKernel};
 use crate::pool;
@@ -235,6 +236,50 @@ fn conjugate_gradients<'py>(
     ))
 }
 
+/// Sparse Cholesky solve of a symmetric positive definite CSR matrix (column indices sorted and
+/// unique within each row; only the upper triangle is read). Returns (solution, "") or
+/// (None, reason) if the factorisation fails; raises MemoryError if the factor does not fit.
+#[pyfunction]
+fn cholesky_solve<'py>(
+    py: Python<'py>,
+    matrix: CsrInput<'py>,
+    rhs: PyReadonlyArray1<'py, f64>,
+) -> PyResult<(Option<Bound<'py, PyArray1<f64>>>, String)> {
+    let rhs = slice(&rhs, "rhs")?;
+    let n = rhs.len();
+    let checked = csr(&matrix, n, "matrix")?;
+    if checked.rows() != n {
+        return Err(PyValueError::new_err("matrix and rhs sizes differ"));
+    }
+    let (indptr, indices, data) = (
+        slice(&matrix.0, "matrix")?,
+        slice(&matrix.1, "matrix")?,
+        slice(&matrix.2, "matrix")?,
+    );
+    let result = py.detach(|| {
+        pool::install(|| {
+            let pointers: Vec<usize> = indptr.iter().map(|&v| v as usize).collect();
+            let rows: Vec<usize> = indices.iter().map(|&v| v as usize).collect();
+            cholesky::solve(n, &pointers, &rows, data, rhs)
+        })
+    });
+    Ok(match result {
+        Ok(solution) => (Some(PyArray1::from_vec(py, solution)), String::new()),
+        Err(cholesky::CholeskyError::NotPositiveDefinite) => {
+            (None, "the matrix is not positive definite".to_string())
+        }
+        Err(cholesky::CholeskyError::OutOfMemory) => {
+            return Err(PyMemoryError::new_err(
+                "the sparse Cholesky factor does not fit in memory",
+            ));
+        }
+        Err(cholesky::CholeskyError::InvalidInput(reason)) => {
+            return Err(PyValueError::new_err(format!("matrix: {reason}")));
+        }
+        Err(cholesky::CholeskyError::Other(reason)) => (None, reason),
+    })
+}
+
 #[pymodule]
 fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<PyRadialKernel>()?;
@@ -243,5 +288,6 @@ fn _core(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(evaluate_potential, module)?)?;
     module.add_function(wrap_pyfunction!(farthest_point_ordering, module)?)?;
     module.add_function(wrap_pyfunction!(conjugate_gradients, module)?)?;
+    module.add_function(wrap_pyfunction!(cholesky_solve, module)?)?;
     Ok(())
 }

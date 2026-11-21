@@ -24,6 +24,14 @@ AUTO_FALLBACK_DIRECT_LIMIT = 50_000
 # preconditioner it typically needs a few hundred
 CG_MAX_ITERATIONS = 10_000
 
+# Direct solves of systems this large use the Rust core's sparse Cholesky (faer) from this
+# dimension on, scipy's SuperLU otherwise. Measured on random points with about 40 neighbours
+# each: 3D 15k unknowns 1.0 s against 2.1 s for SuperLU, 30k unknowns 3.4 s against 12.8 s,
+# but SuperLU is faster below about 8000 unknowns, and in 2D its ordering leaves less fill-in
+# (100k points: 7.5 s against 14.5 s)
+DIRECT_CHOLESKY_FROM_DIM = 3
+DIRECT_CHOLESKY_MIN_UNKNOWNS = 8000
+
 # A solution whose relative residual exceeds this is rejected as numerically singular
 MAX_RELATIVE_RESIDUAL = 1e-6
 
@@ -56,8 +64,12 @@ def resolve_solver(solver: str, unknowns: int, dim: int) -> str:
 
 
 def _csr_arrays(matrix):
-    """(indptr, indices, data) of a sparse matrix in CSR form, as the Rust core expects."""
+    """(indptr, indices, data) of a sparse matrix in canonical CSR form (column indices sorted and
+    unique within each row), as the Rust core expects."""
     matrix = sparse.csr_array(matrix)
+    if not matrix.has_canonical_format:
+        matrix = matrix.copy()
+        matrix.sum_duplicates()
     return (
         np.ascontiguousarray(matrix.indptr, dtype=np.int64),
         np.ascontiguousarray(matrix.indices, dtype=np.int64),
@@ -84,14 +96,43 @@ def _scipy_cg(matrix, rhs, tol, preconditioner, maxiter):
     return solution, info, counter[0]
 
 
-def solve(matrix, rhs, solver: str, tol: float = 1e-10, preconditioner=None):
+def _cholesky(matrix, rhs):
+    """Sparse Cholesky solve in the Rust core (faer); raises MemoryError if the factor does not
+    fit in memory."""
+    solution, reason = _core.cholesky_solve(
+        _csr_arrays(matrix), np.ascontiguousarray(rhs, dtype=float)
+    )
+    if solution is None:
+        hint = (
+            "; are there duplicate or nearly coincident points?"
+            if "positive definite" in reason
+            else ""
+        )
+        raise np.linalg.LinAlgError(
+            f"the interpolation matrix could not be factorised ({reason}){hint}"
+        )
+    return solution
+
+
+def solve(matrix, rhs, solver: str, tol: float = 1e-10, preconditioner=None, dim=None):
     """Solve matrix @ x = rhs with a resolved solver, returning (solution, SolveInfo).
 
-    `preconditioner` approximates the inverse of `matrix` for 'cg' (Jacobi if None).
-    Raises numpy.linalg.LinAlgError if the system cannot be solved accurately.
+    `preconditioner` approximates the inverse of `matrix` for 'cg' (Jacobi if None). `dim` (the
+    dimension of the points) picks the direct solver: a sparse Cholesky factorisation in the
+    Rust core for large systems from 3D on, scipy's SuperLU otherwise (see
+    DIRECT_CHOLESKY_FROM_DIM). Raises numpy.linalg.LinAlgError if the system cannot be solved
+    accurately.
     """
     iterations = None
-    if solver == "direct":
+    use_cholesky = (
+        dim is not None
+        and dim >= DIRECT_CHOLESKY_FROM_DIM
+        and matrix.shape[0] >= DIRECT_CHOLESKY_MIN_UNKNOWNS
+        and not _backend.use_numpy()
+    )
+    if solver == "direct" and use_cholesky:
+        solution = _cholesky(matrix, rhs)
+    elif solver == "direct":
         # The matrix is symmetric positive definite, so no pivoting is needed; partial pivoting
         # would destroy the symmetric fill-reducing ordering (tens of times more fill-in).
         try:

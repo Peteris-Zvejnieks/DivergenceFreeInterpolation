@@ -228,7 +228,9 @@ class _MatrixKernelInterpolant:
                 kernel, points, support_radius, tree, identity_points, matrix
             )
         try:
-            solution, info = solve(matrix, data, solver, self.tol, preconditioner)
+            solution, info = solve(
+                matrix, data, solver, self.tol, preconditioner, dim=dim
+            )
         except np.linalg.LinAlgError:
             # Under 'auto', fall back to the direct factorisation, which copes with nearly
             # coincident points that stall CG, as long as the system is small enough for it
@@ -239,7 +241,7 @@ class _MatrixKernelInterpolant:
             )
             if not fallback:
                 raise
-            solution, info = solve(matrix, data, "direct", self.tol)
+            solution, info = solve(matrix, data, "direct", self.tol, dim=dim)
         if weights is not None:
             solution = weights @ solution
         self._fit = _Fit(
@@ -312,10 +314,11 @@ class DivergenceFreeInterpolant(_MatrixKernelInterpolant):
     nu : int, optional
         Wendland parameter; defaults to the smallest positive definite choice, dim // 2 + k + 1.
     solver : {'auto', 'direct', 'cg', 'lstsq'}, default 'auto'
-        'direct' sparse LU factorisation, 'cg' conjugate gradients (preconditioned by exact
-        inverses over clusters of unusually close points), 'lstsq' dense least squares (small
-        problems, tolerates duplicate points), 'auto' picks 'direct' or 'cg' based on the
-        system size and dimension, and retries a failed 'cg' with 'direct' when feasible.
+        'direct' sparse factorisation (Cholesky for large 3D systems, LU otherwise), 'cg'
+        conjugate gradients (preconditioned by exact inverses over clusters of unusually close
+        points), 'lstsq' dense least squares (small problems, tolerates duplicate points), 'auto'
+        picks 'direct' or 'cg' based on the system size and dimension, and retries a failed 'cg'
+        with 'direct' when feasible.
     tol : float, default 1e-10
         Relative residual tolerance of the 'cg' solver.
     """

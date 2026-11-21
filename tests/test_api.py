@@ -304,6 +304,77 @@ def test_cg_breakdown_on_an_indefinite_matrix(monkeypatch):
         solve(indefinite, np.array([0.0, 1.0, 0.0]), "cg")
 
 
+@pytest.mark.parametrize("kind", ["divergence_free", "curl_free"])
+def test_3d_direct_solves_use_cholesky(kind, monkeypatch):
+    """Large 3D direct solves use the Rust core's sparse Cholesky; it agrees with SuperLU."""
+    from divergence_free_interpolant import _backend, _core, _solvers
+
+    monkeypatch.setattr(_backend, "BACKEND", "rust")
+    monkeypatch.setattr(_solvers, "DIRECT_CHOLESKY_MIN_UNKNOWNS", 900)
+    calls = []
+    cholesky_solve = _core.cholesky_solve
+
+    def spy(*args):
+        calls.append(args)
+        return cholesky_solve(*args)
+
+    monkeypatch.setattr(_core, "cholesky_solve", spy)
+    interp, points, values = fitted(kind, 3, n=300, support=0.5, solver="direct")
+    assert len(calls) == 1
+    np.testing.assert_allclose(interp(points), values, atol=1e-9)
+    # Smaller systems, 2D and the numpy backend factorise with SuperLU
+    fitted(kind, 3, n=200, support=0.5, solver="direct")
+    fitted(kind, 2, n=500, support=0.3, solver="direct")
+    monkeypatch.setattr(_backend, "BACKEND", "numpy")
+    reference, _, _ = fitted(kind, 3, n=300, support=0.5, solver="direct")
+    assert len(calls) == 1
+    np.testing.assert_allclose(
+        interp._fit.coefficients, reference._fit.coefficients, rtol=1e-8, atol=1e-10
+    )
+    assert _solvers.DIRECT_CHOLESKY_FROM_DIM == 3
+
+
+def test_cholesky_reports_indefinite_matrices(monkeypatch):
+    from scipy import sparse
+
+    from divergence_free_interpolant import _backend, _solvers
+    from divergence_free_interpolant._solvers import solve
+
+    monkeypatch.setattr(_backend, "BACKEND", "rust")
+    monkeypatch.setattr(_solvers, "DIRECT_CHOLESKY_MIN_UNKNOWNS", 0)
+    indefinite = sparse.csr_array(sparse.diags_array([1.0, -2.0, 1.0]))
+    with pytest.raises(np.linalg.LinAlgError, match="not positive definite"):
+        solve(indefinite, np.ones(3), "direct", dim=3)
+
+
+def test_cholesky_accepts_noncanonical_csr_matrices(monkeypatch):
+    from scipy import sparse
+
+    from divergence_free_interpolant import _backend, _solvers
+    from divergence_free_interpolant._solvers import solve
+
+    monkeypatch.setattr(_backend, "BACKEND", "rust")
+    monkeypatch.setattr(_solvers, "DIRECT_CHOLESKY_MIN_UNKNOWNS", 0)
+    matrix = sparse.csr_array(
+        (np.array([1.0, 4.0, 1.0, 4.0]), np.array([1, 0, 0, 1]), np.array([0, 2, 4])),
+        shape=(2, 2),
+    )
+    assert not matrix.has_sorted_indices
+    solution, _ = solve(matrix, np.array([5.0, 5.0]), "direct", dim=3)
+    np.testing.assert_allclose(solution, [1.0, 1.0])
+    # Duplicate entries are summed, as scipy does
+    duplicates = sparse.csr_array(
+        (
+            np.array([1.0, 3.0, 1.0, 1.0, 4.0]),
+            np.array([0, 0, 1, 0, 1]),
+            np.array([0, 3, 5]),
+        ),
+        shape=(2, 2),
+    )
+    solution, _ = solve(duplicates, np.array([5.0, 5.0]), "direct", dim=3)
+    np.testing.assert_allclose(solution, [1.0, 1.0])
+
+
 @pytest.mark.parametrize(
     "model",
     [

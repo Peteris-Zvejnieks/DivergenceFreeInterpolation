@@ -13,6 +13,8 @@ name = "_core"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+# Only the sparse Cholesky is used: no rand or npy support
+faer = { version = "0.24.4", default-features = false, features = ["std", "rayon", "sparse-linalg"] }
 numpy = { version = "0.30.0", optional = true }
 pyo3 = { version = "0.30", optional = true }
 rayon = "1.12.0"
