@@ -1,0 +1,49 @@
+[project]
+name = "Divergence_Free_Interpolant"
+version = "0.1.6"
+description = "Divergence free interpolant for 2D and 3D systems"
+readme = "README.md"
+authors = [{ name = "Peteris Zvejnieks", email = "peterf610@gmail.com" }]
+license = "MIT"
+license-files = ["LICENSE"]
+keywords = ["Interpolation", "Vector-Field", "Radial-Basis-Functions"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Operating System :: OS Independent",
+    "Topic :: Scientific/Engineering :: Mathematics",
+]
+requires-python = ">=3.10"
+dependencies = [
+    "numpy>=1.23",
+    "scipy>=1.9",
+    "sympy>=1.11",
+]
+
+[project.urls]
+Homepage = "https://github.com/Peteris-Zvejnieks/DivergenceFreeInterpolation"
+Repository = "https://github.com/Peteris-Zvejnieks/DivergenceFreeInterpolation"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.6",
+]
+examples = [
+    "matplotlib>=3.7",
+    "pyqt6>=6.5",  # GUI backend for matplotlib; tkinter is often missing from pyenv/system builds
+    "pyvista>=0.43",
+]
+
+[build-system]
+requires = ["uv_build>=0.13.9,<0.14.0"]
+build-backend = "uv_build"
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.uv.build-backend]
+module-name = "Divergence_Free_Interpolant"
+module-root = ""
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

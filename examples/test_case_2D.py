@@ -1,7 +1,8 @@
+import time
+
 import matplotlib.pyplot as plt
 import numpy as np
-import time
-plt.rcParams['figure.dpi'] = 500
+
 import Divergence_Free_Interpolant as dfi
 
 np.random.seed(69)
@@ -21,16 +22,6 @@ UV = vector_field(X, Y)
 U, V = UV[0], UV[1]
 
 S = (U**2 + V**2)**0.5
-
-## Visualize vectorfield
-fig, ax = plt.subplots(1, 1)
-quiver = ax.quiver(X, Y, div(U, S), div(V, S), S, cmap ='autumn')
-ax.set_aspect('equal')
-ax.set_xlim(0,1)
-ax.set_ylim(0,1)
-fig.colorbar(quiver)
-plt.show()
-plt.close()
 
 ## Initialize the interpolant, nu = 5, k = 3 will suffice almost always, dim is the dimensionality
 ## default 
@@ -62,11 +53,29 @@ UU = UV[:,:,0]
 VV = UV[:,:,1]
 SS = (UU**2 + VV**2)**0.5
 
-## Visualize interpolated field
+## Visualize the sample and interpolated fields side by side, sharing one color scale
 
-fig, ax = plt.subplots(1,1)
-stream = ax.streamplot(XX.T, YY.T, div(UU, SS).T, div(VV, SS).T, color = SS.T, density = 1, cmap ='autumn')
-fig.colorbar(stream.lines)
-ax.set_aspect('equal')
+norm = plt.Normalize(0, max(S.max(), SS.max()))
+fig, (ax_sample, ax_interp) = plt.subplots(1, 2, figsize = (12, 5.5), sharex = True, sharey = True,
+                                           layout = 'constrained')
+
+ax_sample.quiver(X, Y, div(U, S), div(V, S), S, cmap = 'autumn', norm = norm)
+ax_sample.set_title(f'Sample field ({N} points)')
+
+stream = ax_interp.streamplot(XX.T, YY.T, div(UU, SS).T, div(VV, SS).T, color = SS.T, density = 1,
+                              cmap = 'autumn', norm = norm)
+ax_interp.plot(X, Y, 'k.', markersize = 3)
+ax_interp.set_title('Interpolated field')
+
+for ax in (ax_sample, ax_interp):
+    ax.set_aspect('equal')
+    ax.set_xlim(0, 1)
+    ax.set_ylim(0, 1)
+
+fig.colorbar(stream.lines, ax = [ax_sample, ax_interp], label = '|u|')
+
+## Compute the constrained layout once, then freeze it; otherwise it is recomputed on every
+## redraw, which roughly halves the frame rate while panning/zooming
+fig.canvas.draw()
+fig.set_layout_engine('none')
 plt.show()
-plt.close()

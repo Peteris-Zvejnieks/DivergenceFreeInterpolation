@@ -17,11 +17,20 @@ but implementing a thinning algorithm [[4]](#4) proved to be challenging.
 ## Installation
 
 ```bash
+  uv add Divergence-Free-Interpolant
+  # or
   pip install Divergence-Free-Interpolant
 ```
-### Test case dependecies
+
+### Development
+
+The project is managed with [uv](https://docs.astral.sh/uv/).
+
 ```bash
-  pip install pyvista matplotlib
+  uv sync                    # create .venv with the package (editable) + dev tools
+  uv run pytest              # run the tests
+  uv sync --group examples   # also install matplotlib and pyvista for the examples
+  uv run python examples/test_case_2D.py
 ```
 ## Basic functionality
 
@@ -76,7 +85,7 @@ accepts `SVD, penrose, linsolve, lstsq`
 
 if `dim == 2` will not accept the `z` component
 
-See `tests/test_case_2D.py` and `tests/test_case_3D.py` for more detailed examples.
+See `examples/test_case_2D.py` and `examples/test_case_3D.py` for more detailed examples.
 ## References
 
 <a id="1">[1]</a> Fuselier, Edward J. 
